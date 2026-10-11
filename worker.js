@@ -245,7 +245,7 @@ export default {
     // These lightweight endpoints are handled directly by the Worker. This makes
     // deployment/routing diagnosable without depending on the Durable Object API router.
     if (url.pathname === '/api/maps/health') {
-      return Response.json({ ok: true, service: 'cs-dust-online', route: 'worker-api', authConfigured: !!env.ADMIN_KEY }, { headers });
+      return Response.json({ ok: true, service: 'cs2', route: 'worker-api', authConfigured: !!env.ADMIN_KEY }, { headers });
     }
     if (url.pathname === '/api/maps/auth') {
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
@@ -262,7 +262,7 @@ export default {
       return env.GAME.get(id).fetch(request);
     }
     if (url.pathname === '/health') {
-      return Response.json({ ok: true, service: 'cs-dust-online', runtime: 'cloudflare-durable-object' });
+      return Response.json({ ok: true, service: 'cs2', runtime: 'cloudflare-durable-object' });
     }
     return env.ASSETS.fetch(request);
   }

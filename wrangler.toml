@@ -1,4 +1,4 @@
-name = "cs-dust-online"
+name = "cs2"
 main = "worker.js"
 compatibility_date = "2026-10-08"
 
