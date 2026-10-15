@@ -7,6 +7,7 @@ import { HUD } from './hud.js';
 import { Game } from './game.js';
 import { connectOnline, connectOffline } from './net.js';
 import { TouchEditor, normalizeLayout, applyLayout, setupGate } from './touchui.js';
+import { ServerBrowser, buildMapPicker, mapLabel } from './lobby.js';
 
 const $ = (id) => document.getElementById(id);
 const FA = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
@@ -57,6 +58,8 @@ function setStatus(kind, text) { const s = $('net-status'); s.className = 'statu
 function showLobby() {
   $('lobby').hidden = false; hud.show(false); $('teamsel').hidden = true; $('reconnect').hidden = true; $('touch').hidden = true; rejoin = null; refreshRooms();
 }
+buildMapPicker(document.querySelector('.seg.maps'));
+const browser = new ServerBrowser({ onJoin: (code) => join(code) });
 $('name').value = settings.name || '';
 $('name').addEventListener('input', () => { settings.name = $('name').value.trim().slice(0, 16); save(); });
 const playerName = () => (settings.name || $('name').value || 'Player' + Math.floor(Math.random() * 900 + 100)).trim();
@@ -107,21 +110,13 @@ $('rc-leave').addEventListener('click', () => { rejoin = null; clearTimeout(rejo
 // Maps saved from the map editor live on the server; fetch them so the client builds exactly the same map the server runs.
 async function syncCustomMaps() { try { const r = await fetch('/api/maps/custom', { cache: 'no-store' }); if (r.ok) registerCustomMaps(await r.json()); } catch (e) {} }
 function hello() { return new Promise((res) => net.emit('hello', { name: playerName(), session: sessionId }, async (r) => { if (r && r.t && !net.offline) { game.offset = r.t - Date.now(); await syncCustomMaps(); } res(r); })); }
-function roomRow(r) {
-  const el = document.createElement('div'); el.className = 'room';
-  const phase = r.phase === 'warmup' ? 'Warmup' : `Round ${r.round} · ${r.score.CT}-${r.score.T}`;
-  const mapLabel = ({ dust2: 'Dust II', mirage: 'Mirage', warehouse: 'Warehouse', bazaar: 'Bazaar', arena: 'Arena' })[r.map] || r.map;
-  el.innerHTML = `<div><div class="rt"></div><div class="rc">${r.code}</div></div><div class="rm">${mapLabel}</div><div class="rp"><b>${r.humans}</b> / ${r.max}${r.bots ? ` <small>+${r.bots} bots</small>` : ''}</div><div class="rs">${phase}</div><button>JOIN</button>`;
-  el.querySelector('.rt').textContent = r.title; el.querySelector('button').addEventListener('click', () => join(r.code)); return el;
-}
 async function refreshRooms() {
-  if ($('lobby').hidden || !net || net.offline || !net.connected()) return;
-  net.emit('rooms', null, (list) => {
-    const box = $('rooms'); box.innerHTML = '';
-    if (!list || !list.length) { box.innerHTML = '<div class="empty">هنوز سروری ساخته نشده. اولین نفر باش.</div>'; return; }
-    for (const r of list) box.appendChild(roomRow(r));
-  });
+  if ($('lobby').hidden) return;
+  if (!net || net.offline || !net.connected()) { browser.setOffline('اتصال به سرور برقرار نیست…'); return; }
+  const t0 = performance.now();
+  net.emit('rooms', null, (list) => browser.setRooms(list || [], Math.round(performance.now() - t0)));
 }
+$('sv-refresh').addEventListener('click', () => { sound.ui(); ensureOnline().then(refreshRooms).catch(() => {}); refreshRooms(); });
 setInterval(refreshRooms, 2500);
 async function create(offline) {
   sound.init(); sound.ui(); const btn = offline ? $('btn-offline') : $('btn-create'); if (!btn) return; btn.disabled = true;
