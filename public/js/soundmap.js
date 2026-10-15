@@ -29,9 +29,11 @@ export const SAMPLE_DEFS = {
   zoom_out: [`${W}weapon_zoom_out_02.wav`, `${W}weapon_zoom_out_03.wav`],
 
   // ---------- gunshots: flat ogg where you have them ----------
-  ak47: flat('ak47'), aug: flat('aug'), awp: flat('awp'), deagle: flat('deagle'), famas: flat('famas'),
-  galil: flat('galil'), glock: flat('glock'), m4a1s: flat('m4a1s'), m4a4: flat('m4a4'), mac10: flat('mac10'),
-  mp9: flat('mp9'), p90: flat('p90'), sg553: flat('sg553'), usp: flat('usp'),
+  aug: flat('aug'), famas: flat('famas'), m4a1s: flat('m4a1s'), m4a4: flat('m4a4'), mp9: flat('mp9'), usp: flat('usp'),
+  // these 8 had glitchy/cut-off flat .ogg files -> use the original extracted recordings instead
+  ak47: range(`${W}ak47/ak47_`, 1, 4), awp: range(`${W}awp/awp_`, 1, 2), deagle: range(`${W}deagle/deagle_`, 1, 2),
+  galil: range(`${W}galilar/galil_`, 1, 4), glock: range(`${W}glock18/glock_`, 1, 2), mac10: range(`${W}mac10/mac10_`, 1, 2),
+  p90: range(`${W}p90/p90_`, 1, 2), sg553: range(`${W}sg556/sg556_`, 1, 4),
   // ---------- gunshots: weapons that only exist in source-real ----------
   p2000: range(`${W}hkp2000/hkp2000_`, 1, 3),
   elite: range(`${W}elite/elites_`, 1, 4),
