@@ -1,7 +1,8 @@
 // CS2-style layered audio (WebAudio, positional).
 // Every sound is built from layers (crack + body + boom + tail + mechanical) with a shared room reverb.
-// REAL SAMPLES: if you have your own CS2 sound files, drop them in /audio/cs2/ and list them in
-// /audio/cs2/manifest.json (see /audio/cs2/README.txt). Any sound found there replaces the synthesized one.
+// REAL SAMPLES: every sound name is mapped to its file in js/soundmap.js (files live in public/audio/cs2/).
+// A sound whose file is missing falls back to the synthesized version below.
+import { SAMPLE_DEFS, RELOAD_PARTS } from './soundmap.js';
 const SHOT = {
   // g=overall gain  cf/cg=crack freq/gain  bf/bd/bg=body freq/dur/gain  kf/kd/kg=boom freq/dur/gain  td/tg/tf=tail dur/gain/freq  mech=action clack  sup=suppressed
   ak47:  { g: 1.0,  cf: 2200, cg: 0.9,  bf: 1800, bd: 0.16, bg: 1.0,  kf: 150, kd: 0.14, kg: 1.0,  td: 0.45, tg: 0.35, tf: 1400, mech: 0.25 },
@@ -44,7 +45,7 @@ const DTMF_ROWS = [697, 770, 852, 941], DTMF_COLS = [1209, 1336, 1477];
 const G = (v) => Math.max(0.0001, v);
 
 export class Sound {
-  constructor() { this.ctx = null; this.vol = 0.7; this.steps = []; this.listener = { x: 0, y: 0, z: 0 }; this.plantSounds = new Map(); this.samples = new Map(); }
+  constructor() { this.ctx = null; this.vol = 0.7; this.steps = []; this.listener = { x: 0, y: 0, z: 0 }; this.plantSounds = new Map(); this.samples = new Map(); this._loads = new Map(); this.extraDefs = {}; this.fireLoops = new Set(); this._lastImp = 0; this._lastMiss = 0; }
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; this.ctx = new AC();
@@ -75,21 +76,32 @@ export class Sound {
         .then((buffers) => { this.steps = buffers.filter(Boolean); }));
     this.loadSamples();
   }
-  // optional real CS2 sample override: /audio/cs2/manifest.json  ->  { "ak47": "ak47.wav", "c4_beep": ["beep1.wav","beep2.wav"] }
+  // Sounds come from SAMPLE_DEFS (soundmap.js). They load in the background (4 at a time, most important first).
+  // A sound requested before it has loaded is fetched on demand and the synthesized version plays that one time.
+  // /audio/cs2/manifest.json is still read, but only for names that soundmap.js does not define.
+  _fetchBuf(path) {
+    const get = (p) => fetch(`/audio/cs2/${p}`).then((r) => { if (!r.ok) throw new Error(p); return r.arrayBuffer(); }).then((a) => this.ctx.decodeAudioData(a));
+    return get(path).catch((e) => (/\.ogg$/i.test(path) ? get(path.replace(/\.ogg$/i, '.wav')) : Promise.reject(e))); // Safari: no ogg -> use the .wav twin
+  }
+  ensure(name) {
+    if (this.samples.has(name)) return Promise.resolve();
+    if (this._loads.has(name)) return this._loads.get(name);
+    const files = SAMPLE_DEFS[name] || this.extraDefs[name]; if (!files) return Promise.resolve();
+    const p = Promise.all(files.map((f) => this._fetchBuf(f).catch(() => null))).then((bufs) => { bufs = bufs.filter(Boolean); if (bufs.length) this.samples.set(name, bufs); });
+    this._loads.set(name, p); return p;
+  }
   loadSamples() {
+    const queue = Object.keys(SAMPLE_DEFS); let i = 0;
+    const pump = () => { if (i < queue.length) this.ensure(queue[i++]).then(pump, pump); };
+    for (let k = 0; k < 4; k++) pump();
     fetch('/audio/cs2/manifest.json').then((r) => (r.ok ? r.json() : {})).then((m) => {
-      for (const [name, files] of Object.entries(m || {})) {
-        for (const f of [].concat(files)) {
-          fetch(`/audio/cs2/${f}`).then((r) => { if (!r.ok) throw 0; return r.arrayBuffer(); }).then((a) => this.ctx.decodeAudioData(a))
-            .then((buf) => { if (!this.samples.has(name)) this.samples.set(name, []); this.samples.get(name).push(buf); }).catch(() => {});
-        }
-      }
+      for (const [name, files] of Object.entries(m || {})) if (!SAMPLE_DEFS[name]) { this.extraDefs[name] = [].concat(files); this.ensure(name); }
     }).catch(() => {});
   }
-  playSample(name, pos = null, gain = 1, wet = 0.3, rate = 1) {
-    const list = this.samples.get(name); if (!list || !list.length) return false;
+  playSample(name, pos = null, gain = 1, wet = 0.3, rate = 1, delay = 0) {
+    const list = this.samples.get(name); if (!list || !list.length) { this.ensure(name); return false; }
     const s = this.ctx.createBufferSource(); s.buffer = list[Math.floor(Math.random() * list.length)]; s.playbackRate.value = rate * (0.985 + Math.random() * 0.03);
-    const g = this.out(pos, gain, wet); s.connect(g); s.start(); return { o: s, gain: g };   // handle so long sounds can be cancelled
+    const g = this.out(pos, gain, wet); s.connect(g); s.start(this.ctx.currentTime + delay); return { o: s, gain: g };   // handle so long sounds can be cancelled
   }
   setVolume(v) { this.vol = v; if (this.master) this.master.gain.value = v; }
   setListener(pos, f, up = [0, 1, 0]) {
@@ -147,11 +159,15 @@ export class Sound {
     if (s.bolt) { const b = this.out(pos, 0.5); this.mech(b, t + 0.6, 'bolt'); this.clack(b, t + 0.9, 0.5, 2800); }
   }
   reload(k, dur, pos = null) {
-    if (!this.ctx) return; if (this.playSample(`reload_${k}`, pos, pos ? 0.9 : 1.3, 0.05) || this.playSample('reload', pos, pos ? 0.9 : 1.3, 0.05)) return;
+    if (!this.ctx) return; const g = pos ? 0.9 : 1.3;
+    if (this.playSample(`reload_${k}`, pos, g, 0.05)) return;                       // one full recording
+    const parts = RELOAD_PARTS[k];                                                   // or built from the real part sounds (clip out / in / slide...)
+    if (parts) { let ok = false; parts.forEach(([f], i) => { if (this.playSample(`rl_${k}_${i}`, pos, g, 0.05, 1, dur * f)) ok = true; }); if (ok) return; }
+    if (this.playSample('reload', pos, g, 0.05)) return;                            // generic
     const seq = RELOAD_SEQ[RELOAD_CLASS[k] || 'rifle'], t = this.ctx.currentTime, o = this.out(pos, pos ? 0.9 : 1.4, 0.05);
     for (const [f, kind] of seq) this.mech(o, t + dur * f, kind);
   }
-  draw() { if (!this.ctx) return; if (this.playSample('draw', null, 0.8, 0)) return; this.click(0.2, 1200); }
+  draw(k) { if (!this.ctx) return; if (k && this.playSample(`draw_${k}`, null, 0.8, 0)) return; if (this.playSample('draw', null, 0.8, 0)) return; this.click(0.2, 1200); }
   dry() { if (!this.ctx) return; if (this.playSample('dry')) return; this.clack(this.out(null, 1.2), this.ctx.currentTime, 0.5, 3500); }
   click(gain = 0.3, f = 2400, pos = null, delay = 0) { if (!this.ctx) return; const t = this.ctx.currentTime + delay; this.noiseBurst(this.out(pos, gain), t, 0.04, f, 3, 'bandpass', 0.9); }
   hit(head) {
@@ -161,13 +177,32 @@ export class Sound {
     else { this.tone(o, t, 1300, 0.05, 'square', 0.2); this.tone(o, t, 260, 0.09, 'sine', 0.6, 120); }
   }
   hurt() { if (!this.ctx) return; if (this.playSample('hurt')) return; const t = this.ctx.currentTime; this.tone(this.out(null, 0.5), t, 160, 0.18, 'sine', 0.8, 60); this.noiseBurst(this.out(null, 0.3), t, 0.12, 900, 1, 'lowpass', 0.8); }
+  // ---- impacts / bodies ----
+  impactOk() { const t = this.ctx.currentTime; if (t - this._lastImp < 0.03) return false; this._lastImp = t; return true; }
+  impactWall(pos) { if (this.ctx && this.impactOk()) this.playSample('bullet_wall', pos, 0.55, 0.12); }
+  impactFlesh(pos) { if (this.ctx && this.impactOk()) this.playSample('bullet_flesh', pos, 0.75, 0.05); }
+  knifeHit(pos, flesh = true) { if (this.ctx) this.playSample(flesh ? 'knife_hit' : 'knife_wall', pos, 0.9, 0.08); }
+  nearMiss(a, b) { // bullet whiz when someone else's shot passes close to the listener (a = start, b = end)
+    if (!this.ctx) return; const L = this.listener, t0 = this.ctx.currentTime; if (t0 - this._lastMiss < 0.12) return;
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, l2 = dx * dx + dy * dy + dz * dz || 1;
+    if (Math.hypot(a.x - L.x, a.y - L.y, a.z - L.z) < 3) return;
+    const t = Math.max(0, Math.min(1, ((L.x - a.x) * dx + (L.y - a.y) * dy + (L.z - a.z) * dz) / l2));
+    const p = { x: a.x + dx * t, y: a.y + dy * t, z: a.z + dz * t };
+    if (Math.hypot(p.x - L.x, p.y - L.y, p.z - L.z) > 2.2) return;
+    this._lastMiss = t0; this.playSample('nearmiss', p, 0.9, 0.05);
+  }
+  death(pos, hs) { if (!this.ctx) return; this.playSample('death', pos, 0.9, 0.15); this.playSample(hs ? 'kill_head' : 'kill_body', pos, 0.8, 0.1); }
+  pickup(kind) { if (this.ctx) this.playSample(kind === 'grenade' ? 'pickup_grenade' : 'pickup_weapon', null, 0.8, 0); }
+  scope(on) { if (!this.ctx) return; if (this.playSample(on ? 'zoom' : 'zoom_out', null, 0.6, 0)) return; this.click(0.15, 3000); }
   // ---- grenades ----
-  nadeThrow(pos = null) {
-    if (!this.ctx) return; if (this.playSample('nade_throw', pos, 0.9, 0.1)) return;
+  far(pos, d0 = 55) { return !!pos && Math.hypot(pos.x - this.listener.x, pos.y - this.listener.y, pos.z - this.listener.z) > d0; }
+  boom(name, pos, gain, wet) { return (this.far(pos) && this.playSample(`${name}_far`, pos, gain, wet)) || this.playSample(name, pos, gain, wet); } // distant recording when far away
+  nadeThrow(pos = null, k = null) {
+    if (!this.ctx) return; if ((k && this.playSample(`throw_${k}`, pos, 0.9, 0.1)) || this.playSample('nade_throw', pos, 0.9, 0.1)) return;
     const t = this.ctx.currentTime, o = this.out(pos, 1.2, 0.1); this.clack(o, t, 0.5, 2200); this.tone(o, t + 0.12, 3000, 0.09, 'triangle', 0.25, 1900); this.noiseBurst(o, t + 0.12, 0.08, 4000, 1.5, 'bandpass', 0.2);
   }
   heBlast(pos) {
-    if (!this.ctx) return; if (this.playSample('he', pos, 1.1, 0.25)) return;
+    if (!this.ctx) return; if (this.boom('he', pos, 1.1, 0.25)) return;
     const t = this.ctx.currentTime, o = this.out(pos, 1.25, 0.7);
     this.noiseBurst(o, t, 0.08, 5500, 0.6, 'highpass', 0.9, 1.3, 0.001, 0.4);
     this.noiseBurst(o, t, 0.6, 1800, 0.5, 'lowpass', 1.0, 1, 0.003, 0.1);
@@ -175,15 +210,35 @@ export class Sound {
     for (let i = 0; i < 8; i++) this.noiseBurst(o, t + 0.2 + Math.random() * 0.8, 0.03, 1500 + Math.random() * 3000, 2, 'bandpass', 0.12, 1);
   }
   flashBang(pos) {
-    if (!this.ctx) return; if (this.playSample('flash', pos, 0.9, 0.2)) return;
+    if (!this.ctx) return; if (this.boom('flash', pos, 0.9, 0.2)) return;
     const t = this.ctx.currentTime, o = this.out(pos, 0.95, 0.6);
     this.noiseBurst(o, t, 0.06, 7000, 0.6, 'highpass', 0.9, 1.4, 0.001, 0.5); this.noiseBurst(o, t, 0.28, 4500, 1.2, 'highpass', 0.7, 1, 0.002, 0.4); this.tone(o, t, 3400, 0.4, 'sine', 0.12);
   }
   smokePop(pos) {
-    if (!this.ctx) return; if (this.playSample('smoke', pos, 0.8, 0.2)) return;
+    if (!this.ctx) return; if (this.boom('smoke', pos, 0.9, 0.2)) { if (!this.far(pos)) this.playSample('smoke_emit', pos, 0.5, 0.2); return; }
     const t = this.ctx.currentTime, o = this.out(pos, 0.5, 0.3);
     this.tone(o, t, 140, 0.25, 'sine', 0.6, 60); this.noiseBurst(o, t, 0.25, 850, 0.7, 'lowpass', 0.45); this.noiseBurst(o, t + 0.05, 0.9, 3000, 0.5, 'bandpass', 0.14, 1, 0.08, 0.6);
   }
+  fireBoom(pos, k) { // molotov / incendiary: glass smash (or pop) + whoomph + ignite
+    if (!this.ctx) return; const inc = k === 'incendiary';
+    if (!this.boom(inc ? 'incendiary' : 'molotov', pos, 1.1, 0.25)) {
+      const t = this.ctx.currentTime, o = this.out(pos, 0.8, 0.3); this.noiseBurst(o, t, 0.5, 2200, 0.6, 'lowpass', 0.7, 1, 0.01, 0.2); this.tone(o, t, 120, 0.4, 'sine', 0.6, 50); return;
+    }
+    this.playSample(inc ? 'incendiary_pop' : 'molotov_smash', pos, 0.9, 0.2); this.playSample('fire_ignite', pos, 0.7, 0.2);
+  }
+  fireStart(pos) { // looping flame crackle for an active fire patch; returns a handle for fireStop()
+    if (!this.ctx) return null; const list = this.samples.get('fire_loop'); if (!list || !list.length) { this.ensure('fire_loop'); return null; }
+    const c = this.ctx, s = c.createBufferSource(); s.buffer = list[0]; s.loop = true; const g = this.out(pos, 0.0001, 0.05); s.connect(g); s.start();
+    g.gain.setTargetAtTime(0.9, c.currentTime, 0.15); const h = { o: s, gain: g, pos }; this.fireLoops.add(h);
+    setTimeout(() => this.fireStop(h, true), 20000); // safety net: never let a loop play forever
+    return h;
+  }
+  fireStop(h, quiet = false) {
+    if (!h || !this.ctx || !this.fireLoops.has(h)) return; this.fireLoops.delete(h); const t = this.ctx.currentTime;
+    try { h.gain.gain.cancelScheduledValues(t); h.gain.gain.setTargetAtTime(0.0001, t, 0.25); h.o.stop(t + 1.5); } catch (_) {}
+    if (!quiet) this.playSample('fire_end', h.pos, 0.6, 0.1);
+  }
+  stopFires() { for (const h of [...this.fireLoops]) this.fireStop(h, true); }
   ring(amount = 1) { if (!this.ctx) return; const h = this.playSample('ring', null, 0.9 * Math.min(1, amount), 0); if (h) { const t0 = this.ctx.currentTime, g = h.gain.gain; g.setValueAtTime(0.9 * Math.min(1, amount), t0); g.setValueAtTime(0.9 * Math.min(1, amount), t0 + 0.2 + amount * 1.2); g.linearRampToValueAtTime(0.0001, t0 + 0.8 + amount * 2.6); return; } const t = this.ctx.currentTime; this.tone(this.out(null, 0.35), t, 1100, 0.35 + amount * 0.7, 'sine', 0.2, 300); }
   step(pos, gain = 0.5, surface = 'concrete') {
     if (!this.ctx) return;

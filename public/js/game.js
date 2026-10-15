@@ -94,13 +94,13 @@ export class Game {
         const dur = Math.max(0, amt) * 4.8; if (dur > this.blind) { this.blind = dur; this.blindMax = dur; } this.sound.ring(Math.min(1, amt));
       }
     } else if (b.k === 'smoke') this.sound.smokePop(p);
-    else if (b.k === 'molotov' || b.k === 'incendiary') this.sound.smokePop(p);
+    else if (b.k === 'molotov' || b.k === 'incendiary') this.sound.fireBoom(p, b.k);
     else if (b.k === 'decoy') this.sound.click(0.3, 1500, p);
   }
   // Molotov / incendiary flames: a flickering additive sprite cloud, rebuilt from the server's list of active fires.
   onFires(list) {
     list = list || []; const ids = new Set(list.map((f) => f.id));
-    for (const [id, fx] of this.fireFx) if (!ids.has(id)) { fx.fade = true; }
+    for (const [id, fx] of this.fireFx) if (!ids.has(id)) { if (!fx.fade) this.sound.fireStop(fx.snd); fx.fade = true; }
     for (const f of list) {
       if (this.fireFx.has(f.id)) continue;
       if (!this.texFire) this.texFire = TX.radial('rgba(255,225,130,1)', 'rgba(255,80,10,0)');
@@ -111,7 +111,7 @@ export class Game {
         const sp = new THREE.Sprite(m); const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * f.r * 0.9;
         sp.userData = { x: Math.cos(a) * r, z: Math.sin(a) * r, ph: Math.random() * 6.28, sz: 0.9 + Math.random() * 1.1, sp: 0.8 + Math.random() * 1.2 }; sp.position.set(sp.userData.x, 0.2, sp.userData.z); g.add(sp); puffs.push(sp);
       }
-      this.scene.add(g); this.fireFx.set(f.id, { g, puffs, light, t: 0, k: 1, fade: false });
+      this.scene.add(g); this.fireFx.set(f.id, { g, puffs, light, t: 0, k: 1, fade: false, snd: this.sound.fireStart(new THREE.Vector3(f.x, f.y + 0.5, f.z)) });
     }
   }
   updateFires(dt) {
@@ -225,7 +225,7 @@ export class Game {
   }
   onDrops(list) {
     const ids = new Set(list.map((d) => d.id));
-    for (const [id, m] of this.dropMeshes) if (!ids.has(id)) { this.scene.remove(m); this.dropMeshes.delete(id); }
+    for (const [id, m] of this.dropMeshes) if (!ids.has(id)) { const dr = m.userData.drop; if (dr && this.alive && this.s && Math.hypot(dr.x - this.s.x, dr.z - this.s.z) < 2.8) this.sound.pickup(NADES.includes(dr.k) ? 'grenade' : 'weapon'); this.scene.remove(m); this.dropMeshes.delete(id); }
     for (const d of list) {
       if (this.dropMeshes.has(d.id)) continue; const g = makeGun(d.k); g.scale.setScalar(1.15);
       g.rotation.set(0, (d.id * 2.4) % 6.28, Math.PI / 2); g.position.set(d.x, d.y + 0.07, d.z); g.userData.drop = d; this.scene.add(g); this.dropMeshes.set(d.id, g);
@@ -235,7 +235,8 @@ export class Game {
     const pos = new THREE.Vector3(f.o[0], f.o[1], f.o[2]); const r = this.remotes.get(f.id); if (r) r.lastShot = performance.now();
     if (f.x === 2) { this.sound.shot(f.w, pos); this.flashAt(pos, true); return; } // decoy: sound + muzzle glint only
     if (!f.x) this.sound.shot(f.w, pos); // extra shotgun pellets are silent
-    if (f.w === 'knife') return;
+    if (f.w === 'knife') { if (f.h === 1) this.sound.knifeHit(new THREE.Vector3(...f.e), true); else if (f.h === 2) this.sound.knifeHit(new THREE.Vector3(...f.e), false); return; }
+    this.sound.nearMiss(pos, { x: f.e[0], y: f.e[1], z: f.e[2] });
     if (r && r.rig.gun) { const mz = r.rig.gun.localToWorld(r.rig.gun.userData.muzzle.clone()); this.flashAt(mz, true); this.tracer(mz, new THREE.Vector3(...f.e)); }
     else this.tracer(pos, new THREE.Vector3(...f.e));
     if (f.h === 2 && f.n) this.impact(new THREE.Vector3(...f.e), new THREE.Vector3(...f.n), false);
@@ -248,6 +249,7 @@ export class Game {
   }
   onKill(e) {
     this.hud.kill(e, this.meId);
+    { const vr = this.remotes.get(e.v); if (vr) this.sound.death(vr.rig.root.position.clone(), e.hs); else if (e.v === this.meId) this.sound.death(null, e.hs); }
     if (e.v === this.meId) this.die(e);
     if (e.k === this.meId && e.v !== this.meId) this.sound.money();
     if (this.specId === e.v) this.specSwitchAt = performance.now() + 1800;
@@ -262,7 +264,7 @@ export class Game {
     else if (a.type === 'cancel') this.sound.cancelKeypad(a.id);
     else if (a.type === 'defuse') this.sound.defuse(pos, a.id);
     else if (a.type === 'reload' && r) this.sound.reload(null, 2.4, pos);
-    else if (a.type === 'throw' && r) this.sound.nadeThrow(pos);
+    else if (a.type === 'throw' && r) this.sound.nadeThrow(pos, a.k);
   }
   resetFrameClock() {
     // A settings/render change must not consume a stale frame delta.
@@ -419,7 +421,7 @@ export class Game {
       this.flashAt(this.camera.position, false); this.vmFlash = now + 45; this.vmKick = 1.6;
       this.punchP += w.kick * 1.4; this.punchY += (Math.random() - 0.5) * w.side * 2; return;
     }
-    if (w.melee) { this.vmKick = alt ? 1.35 : 1; this.vmKnifeAlt = !!alt; if (!best && wall.t < range && wall.n) this.impact(end, new THREE.Vector3(...wall.n), true); if (best) this.blood(end); return; }
+    if (w.melee) { this.vmKick = alt ? 1.35 : 1; this.vmKnifeAlt = !!alt; if (!best && wall.t < range && wall.n) { this.impact(end, new THREE.Vector3(...wall.n), true, true); this.sound.knifeHit(end, false); } if (best) { this.blood(end, true); this.sound.knifeHit(end, true); } return; }
     const mz = this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
     if (this.shotsFired % 2 === 1 || !w.auto) this.tracer(mz, end);
     this.flashAt(this.camera.position, false); this.vmFlash = now + 45; this.vmKick = 1;
@@ -430,7 +432,7 @@ export class Game {
   }
   throwNade(now, str = 1) {
     const it = this.activeItem(); if (!it || !it.nade || !this.alive || this.phase === 'freeze' || now < this.drawEnd || now < this.nextFire || it.mag <= 0) return;
-    this.nextFire = now + 800; this.vmKick = 1; this.net.emit('throw', { d: forward(this.yaw, this.pitch).map((v) => +v.toFixed(4)), str }); this.sound.nadeThrow();
+    this.nextFire = now + 800; this.vmKick = 1; this.net.emit('throw', { d: forward(this.yaw, this.pitch).map((v) => +v.toFixed(4)), str }); this.sound.nadeThrow(null, it.k);
     this.drawEnd = now + 650;
   }
   reload() {
@@ -444,14 +446,14 @@ export class Game {
       let k = this.you.gk && g[this.you.gk] > 0 ? this.you.gk : have[0];
       if (this.you.a === 4) { if (have.length < 2) return; k = have[(have.indexOf(k) + 1) % have.length]; } else this.lastSlot = this.you.a;
       this.you.a = 4; this.you.gk = k; this.pendingSwitch = performance.now(); this.net.emit('sw', { slot: 4, k });
-      this.drawEnd = performance.now() + 500; this.scope = 0; this.reloadUntil = 0; this.shotsFired = 0; this.sound.draw(); return;
+      this.drawEnd = performance.now() + 500; this.scope = 0; this.reloadUntil = 0; this.shotsFired = 0; this.sound.draw(k); return;
     }
     if (slot === 5 ? !this.you.b : !this.you.w[slot]) return; if (this.you.a === slot) return;
     this.lastSlot = this.you.a; this.you.a = slot; this.pendingSwitch = performance.now(); this.net.emit('sw', { slot });
-    const w = WEAPONS[slot === 5 ? 'c4' : this.you.w[slot].k]; this.drawEnd = performance.now() + (w.draw || 0.4) * 1000; this.scope = 0; this.reloadUntil = 0; this.shotsFired = 0; this.sound.draw();
+    const w = WEAPONS[slot === 5 ? 'c4' : this.you.w[slot].k]; this.drawEnd = performance.now() + (w.draw || 0.4) * 1000; this.scope = 0; this.reloadUntil = 0; this.shotsFired = 0; this.sound.draw(slot === 5 ? 'c4' : this.you.w[slot].k);
   }
   cycleSlot(dir) { if (!this.you) return; const g = this.you.g || {}; const order = [1, 2, 3, 6, 4, 5].filter((s) => (s === 5 ? this.you.b : s === 4 ? NADES.some((n) => g[n] > 0) : this.you.w[s])); const i = order.indexOf(this.you.a); this.switchSlot(order[(i + dir + order.length) % order.length]); }
-  toggleScope() { const w = this.activeW(); if (!w || !w.scope || this.reloadUntil || !this.alive) { this.scope = 0; return; } this.scope = (this.scope + 1) % (w.scope.length + 1); this.sound.click(0.15, 3000); }
+  toggleScope() { const w = this.activeW(); if (!w || !w.scope || this.reloadUntil || !this.alive) { this.scope = 0; return; } this.scope = (this.scope + 1) % (w.scope.length + 1); this.sound.scope(this.scope > 0); }
   die(e) {
     if (!this.alive && this.deathAt) return; this.alive = false; this.deathAt = performance.now(); this.scope = 0; this.closeMenus();
     this.killerId = e ? e.k : null; this.deathCamPos = this.camera.position.clone(); this.specId = null;
@@ -525,13 +527,14 @@ export class Game {
   flashAt(pos, remote) { this.flashLight.position.copy(pos); this.flashLight.intensity = remote ? 18 : 10; this.flashT = 0.05; if (remote) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texStar, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); s.position.copy(pos); s.scale.setScalar(0.5); s.material.rotation = Math.random() * 6; this.addFx(s, 0.05); } }
   tracer(a, b) { const g = new THREE.BufferGeometry().setFromPoints([a, b]); const l = new THREE.Line(g, this.tracerMat.clone()); this.addFx(l, 0.07, (fx, k) => { l.material.opacity = 0.55 * k; }); }
   puff(pos, tex, size, life, rise = 0.4) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true })); s.position.copy(pos); s.scale.setScalar(size * 0.4); this.addFx(s, life, (fx, k) => { s.material.opacity = k; s.scale.setScalar(size * (1.4 - k)); s.position.y += rise * 0.016; }); }
-  impact(p, n, local) {
+  impact(p, n, local, silent) {
+    if (!silent) this.sound.impactWall(p);
     let d = this.decals[this.decalIdx]; if (!d) { d = new THREE.Mesh(this.holeGeo, this.holeMat); this.scene.add(d); this.decals[this.decalIdx] = d; }
     this.decalIdx = (this.decalIdx + 1) % 160; d.visible = true; d.position.copy(p).addScaledVector(n, 0.012); d.lookAt(p.clone().add(n)); d.rotateZ(Math.random() * 6);
     this.puff(p.clone().addScaledVector(n, 0.08), this.texDust, 0.55, 0.5);
   }
   clearDecals() { for (const d of this.decals) if (d) d.visible = false; }
-  blood(p) { for (let i = 0; i < 2; i++) this.puff(p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2)), this.texBlood, 0.5, 0.35, -0.2); }
+  blood(p, silent) { if (!silent) this.sound.impactFlesh(p); for (let i = 0; i < 2; i++) this.puff(p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2)), this.texBlood, 0.5, 0.35, -0.2); }
   explosionFx(x, y, z) {
     const p = new THREE.Vector3(x, (y || 0) + 1, z); this.sound.explosion(p);
     const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ color: '#ffb347', transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));

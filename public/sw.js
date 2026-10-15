@@ -1,8 +1,8 @@
-const CACHE = 'cs-dust-online-v13-full-roster-lobby';
+const CACHE = 'cs-dust-online-v14-soundmap';
 const CORE = [
   '/', '/manifest.webmanifest', '/css/style.css',
   '/js/main.js', '/js/game.js', '/js/hud.js', '/js/models.js',
-  '/js/audio.js', '/js/lobby.js', '/js/net.js', '/js/textures.js', '/js/world.js',
+  '/js/audio.js', '/js/soundmap.js', '/js/lobby.js', '/js/net.js', '/js/textures.js', '/js/world.js',
   '/shared/constants.js', '/shared/core.js', '/shared/game.js',
   '/shared/maps.js', '/shared/nav.js', '/shared/physics.js',
   '/shared/ranks.js', '/shared/weapons.js',
