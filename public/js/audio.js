@@ -19,7 +19,21 @@ const SHOT = {
   glock: { g: 0.72, cf: 3300, cg: 0.8,  bf: 2600, bd: 0.08, bg: 0.8,  kf: 240, kd: 0.07, kg: 0.6,  td: 0.22, tg: 0.2,  tf: 1700, mech: 0.2 },
   usp:   { g: 0.8,  cf: 1800, cg: 0.2,  bf: 1600, bd: 0.08, bg: 0.7,  kf: 300, kd: 0.06, kg: 0.45, td: 0.12, tg: 0.1,  tf: 1100, mech: 0.6, sup: 1 },
 };
-const RELOAD_CLASS = { awp: 'bolt', deagle: 'pistol', glock: 'pistol', usp: 'pistol', mac10: 'smg', mp9: 'smg', p90: 'smg' };
+// Sounds for the rest of the CS2 roster: tuned variations of the base shots above.
+const V = (b, o) => ({ ...SHOT[b], ...o });
+Object.assign(SHOT, {
+  zeus: { g: 1.0, cf: 5000, cg: 1.2, bf: 4000, bd: 0.18, bg: 0.6, kf: 400, kd: 0.05, kg: 0.3, td: 0.3, tg: 0.3, tf: 3000 },
+  p2000: V('usp', { sup: 0, cg: 0.8, cf: 2600, td: 0.2, g: 0.78 }), elite: V('glock', { g: 0.8, bf: 2300 }), p250: V('glock', { g: 0.78, bf: 2400, kf: 210 }),
+  tec9: V('glock', { g: 0.74, cf: 3500, bf: 2900 }), fiveseven: V('glock', { g: 0.72, cf: 3800, bf: 3000, kf: 260 }), cz75: V('mp9', { g: 0.74 }), r8: V('deagle', { g: 1.3, kg: 1.3, td: 1.1 }),
+  mp7: V('mp9', { cf: 3300 }), mp5sd: V('m4a1s', { g: 0.7, cg: 0.18, td: 0.12 }), ump45: V('mac10', { g: 0.85, kf: 190, kg: 0.7 }), bizon: V('p90', { g: 0.72, bf: 2900 }),
+  ssg08: V('awp', { g: 1.15, bd: 0.25, kf: 120, td: 1.1 }), g3sg1: V('ak47', { g: 1.2, kf: 110, kd: 0.2, td: 0.9, mech: 0 }), scar20: V('m4a4', { g: 1.2, kf: 120, kd: 0.2, td: 0.9, mech: 0 }),
+  nova: { g: 1.35, cf: 1500, cg: 1.0, bf: 900, bd: 0.28, bg: 1.2, kf: 80, kd: 0.3, kg: 1.4, td: 0.8, tg: 0.5, tf: 800, mech: 0.6 },
+  xm1014: { g: 1.25, cf: 1700, cg: 1.0, bf: 1000, bd: 0.25, bg: 1.15, kf: 90, kd: 0.26, kg: 1.3, td: 0.7, tg: 0.45, tf: 850 },
+  sawedoff: { g: 1.5, cf: 1300, cg: 1.1, bf: 800, bd: 0.32, bg: 1.3, kf: 70, kd: 0.36, kg: 1.5, td: 0.9, tg: 0.55, tf: 700 },
+  mag7: { g: 1.35, cf: 1600, cg: 1.0, bf: 950, bd: 0.28, bg: 1.2, kf: 85, kd: 0.3, kg: 1.4, td: 0.8, tg: 0.5, tf: 800, mech: 0.6 },
+  m249: V('ak47', { g: 1.05, bf: 1500, kf: 120, kd: 0.16 }), negev: V('ak47', { g: 1.05, cf: 2000, bf: 1400, kf: 115 }),
+});
+const RELOAD_CLASS = { awp: 'bolt', ssg08: 'bolt', deagle: 'pistol', glock: 'pistol', usp: 'pistol', p2000: 'pistol', elite: 'pistol', p250: 'pistol', tec9: 'pistol', fiveseven: 'pistol', cz75: 'pistol', r8: 'pistol', mac10: 'smg', mp9: 'smg', p90: 'smg', mp7: 'smg', mp5sd: 'smg', ump45: 'smg', bizon: 'smg', nova: 'bolt', xm1014: 'bolt', sawedoff: 'bolt', mag7: 'bolt' };
 const RELOAD_SEQ = {
   rifle: [[0.18, 'out'], [0.5, 'in'], [0.78, 'bolt']],
   smg: [[0.2, 'out'], [0.55, 'in'], [0.8, 'bolt']],
