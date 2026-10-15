@@ -598,7 +598,7 @@ export class GameRoom {
   reload(p) {
     const item = p.w[p.active]; if (!p.alive || !item || this.phase === 'over') return; const w = WEAPONS[item.k];
     if (!w || w.melee || !w.mag || item.mag >= w.mag || item.res <= 0 || p.reloadEnd) return;
-    p.reloadEnd = Date.now() + w.reload * 1000; p.scoped = 0; p.youDirty = true; this.broadcast('act', { id: p.id, type: 'reload' }, p.id);
+    p.reloadEnd = Date.now() + w.reload * 1000; p.scoped = 0; p.youDirty = true; this.broadcast('act', { id: p.id, type: 'reload', k: item.k }, p.id);
   }
   switchSlot(p, slot, k) {
     if (!p.alive) return;

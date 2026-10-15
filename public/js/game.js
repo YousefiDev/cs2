@@ -249,7 +249,7 @@ export class Game {
   }
   onKill(e) {
     this.hud.kill(e, this.meId);
-    { const vr = this.remotes.get(e.v); if (vr) this.sound.death(vr.rig.root.position.clone(), e.hs); else if (e.v === this.meId) this.sound.death(null, e.hs); }
+    { this.sound.cancelReload(e.v === this.meId ? 'me' : e.v); const vr = this.remotes.get(e.v); if (vr) this.sound.death(vr.rig.root.position.clone(), e.hs); else if (e.v === this.meId) this.sound.death(null, e.hs); }
     if (e.v === this.meId) this.die(e);
     if (e.k === this.meId && e.v !== this.meId) this.sound.money();
     if (this.specId === e.v) this.specSwitchAt = performance.now() + 1800;
@@ -263,7 +263,7 @@ export class Game {
     if (a.type === 'plant') this.sound.keypad(pos, a.id);
     else if (a.type === 'cancel') this.sound.cancelKeypad(a.id);
     else if (a.type === 'defuse') this.sound.defuse(pos, a.id);
-    else if (a.type === 'reload' && r) this.sound.reload(null, 2.4, pos);
+    else if (a.type === 'reload' && r) this.sound.reload(a.k || null, (WEAPONS[a.k] && WEAPONS[a.k].reload) || 2.4, pos, a.id);
     else if (a.type === 'throw' && r) this.sound.nadeThrow(pos, a.k);
   }
   resetFrameClock() {

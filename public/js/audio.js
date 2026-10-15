@@ -45,7 +45,7 @@ const DTMF_ROWS = [697, 770, 852, 941], DTMF_COLS = [1209, 1336, 1477];
 const G = (v) => Math.max(0.0001, v);
 
 export class Sound {
-  constructor() { this.ctx = null; this.vol = 0.7; this.steps = []; this.listener = { x: 0, y: 0, z: 0 }; this.plantSounds = new Map(); this.samples = new Map(); this._loads = new Map(); this.extraDefs = {}; this.fireLoops = new Set(); this._lastImp = 0; this._lastMiss = 0; }
+  constructor() { this.ctx = null; this.vol = 0.7; this.steps = []; this.listener = { x: 0, y: 0, z: 0 }; this.plantSounds = new Map(); this.samples = new Map(); this._loads = new Map(); this.extraDefs = {}; this.fireLoops = new Set(); this._lastImp = 0; this._lastMiss = 0; this.rlNodes = new Map(); }
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; this.ctx = new AC();
@@ -158,16 +158,18 @@ export class Sound {
     if (s.mech) this.clack(o, t + 0.045, s.mech, 3200);                                                  // action
     if (s.bolt) { const b = this.out(pos, 0.5); this.mech(b, t + 0.6, 'bolt'); this.clack(b, t + 0.9, 0.5, 2800); }
   }
-  reload(k, dur, pos = null) {
-    if (!this.ctx) return; const g = pos ? 0.9 : 1.3;
+  // id = whose reload it is ('me' for the local player, the player id for enemies); a new reload / death / weapon switch cancels the old one
+  cancelReload(id = 'me') { const hs = this.rlNodes.get(id); if (hs) for (const h of hs) { try { h.o.stop(); } catch (_) {} } this.rlNodes.delete(id); }
+  reload(k, dur, pos = null, id = 'me') {
+    if (!this.ctx) return; this.cancelReload(id); const g = pos ? 0.9 : 1.3, hs = [];
+    const parts = RELOAD_PARTS[k];                                                   // real part sounds (clip out / in / bolt...) timed to this weapon's reload time
+    if (parts) { parts.forEach(([f], i) => { const h = this.playSample(`rl_${k}_${i}`, pos, g, 0.05, 1, dur * f); if (h) hs.push(h); }); if (hs.length) { this.rlNodes.set(id, hs); return; } }
     if (this.playSample(`reload_${k}`, pos, g, 0.05)) return;                       // one full recording
-    const parts = RELOAD_PARTS[k];                                                   // or built from the real part sounds (clip out / in / slide...)
-    if (parts) { let ok = false; parts.forEach(([f], i) => { if (this.playSample(`rl_${k}_${i}`, pos, g, 0.05, 1, dur * f)) ok = true; }); if (ok) return; }
     if (this.playSample('reload', pos, g, 0.05)) return;                            // generic
     const seq = RELOAD_SEQ[RELOAD_CLASS[k] || 'rifle'], t = this.ctx.currentTime, o = this.out(pos, pos ? 0.9 : 1.4, 0.05);
     for (const [f, kind] of seq) this.mech(o, t + dur * f, kind);
   }
-  draw(k) { if (!this.ctx) return; if (k && this.playSample(`draw_${k}`, null, 0.8, 0)) return; if (this.playSample('draw', null, 0.8, 0)) return; this.click(0.2, 1200); }
+  draw(k) { if (!this.ctx) return; this.cancelReload('me'); if (k && this.playSample(`draw_${k}`, null, 0.8, 0)) return; if (this.playSample('draw', null, 0.8, 0)) return; this.click(0.2, 1200); }
   dry() { if (!this.ctx) return; if (this.playSample('dry')) return; this.clack(this.out(null, 1.2), this.ctx.currentTime, 0.5, 3500); }
   click(gain = 0.3, f = 2400, pos = null, delay = 0) { if (!this.ctx) return; const t = this.ctx.currentTime + delay; this.noiseBurst(this.out(pos, gain), t, 0.04, f, 3, 'bandpass', 0.9); }
   hit(head) {

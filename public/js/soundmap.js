@@ -61,10 +61,8 @@ export const SAMPLE_DEFS = {
 
   // ---------- full reload recordings you already have as flat files ----------
   reload: ['reload_generic.ogg'],
-  reload_ak47: ['reload_ak47.ogg'], reload_aug: ['reload_aug.ogg'], reload_awp: ['reload_awp.ogg'], reload_deagle: ['reload_deagle.ogg'],
-  reload_famas: ['reload_famas.ogg'], reload_galil: ['reload_galil.ogg'], reload_glock: ['reload_glock.ogg'], reload_m4a1s: ['reload_m4a1s.ogg'],
-  reload_m4a4: ['reload_m4a4.ogg'], reload_mac10: ['reload_mac10.ogg'], reload_mp9: ['reload_mp9.ogg'], reload_p90: ['reload_p90.ogg'],
-  reload_sg553: ['reload_sg553.ogg'], reload_usp: ['reload_usp.ogg'],
+  reload_aug: ['reload_aug.ogg'], reload_famas: ['reload_famas.ogg'], reload_m4a1s: ['reload_m4a1s.ogg'],
+  reload_m4a4: ['reload_m4a4.ogg'], reload_mp9: ['reload_mp9.ogg'], reload_usp: ['reload_usp.ogg'],
 
   // ---------- grenades ----------
   throw_he: [`${W}hegrenade/grenade_throw.wav`],
@@ -110,6 +108,15 @@ export const SAMPLE_DEFS = {
 // Weapons that have no single "reload_<weapon>" recording: the reload is built from the real part sounds.
 // [fraction of the reload time, file]
 export const RELOAD_PARTS = {
+  // the 8 guns whose flat reload_*.ogg was glitchy: built from the real part sounds, timed to each gun's reload time
+  ak47: [[0.15, `${W}ak47/ak47_clipout_01.wav`], [0.5, `${W}ak47/ak47_addammo_02.wav`], [0.76, `${W}ak47/ak47_boltpull_01.wav`]],
+  awp: [[0.12, `${W}awp/awp_clipout.mp3`], [0.42, `${W}awp/awp_clipin.mp3`], [0.5, `${W}awp/awp_cliphit.mp3`], [0.72, `${W}awp/awp_boltback.wav`], [0.83, `${W}awp/awp_boltforward.wav`]],
+  deagle: [[0.15, `${W}deagle/de_clipout.wav`], [0.5, `${W}deagle/de_clipin.mp3`], [0.72, `${W}deagle/de_slideback.wav`], [0.82, `${W}deagle/de_slideforward.wav`]],
+  galil: [[0.15, `${W}galilar/galil_clipout.mp3`], [0.5, `${W}galilar/galil_clipin.wav`], [0.72, `${W}galilar/galil_boltback.wav`], [0.83, `${W}galilar/galil_boltforward.wav`]],
+  glock: [[0.15, `${W}glock18/glock_clipout.wav`], [0.5, `${W}glock18/glock_clipin.wav`], [0.7, `${W}glock18/glock_slideback.wav`], [0.8, `${W}glock18/glock_sliderelease.wav`]],
+  mac10: [[0.15, `${W}mac10/mac10_clipout.wav`], [0.5, `${W}mac10/mac10_clipin.mp3`], [0.72, `${W}mac10/mac10_boltback.wav`], [0.83, `${W}mac10/mac10_boltforward.wav`]],
+  p90: [[0.08, `${W}p90/p90_cliprelease.wav`], [0.2, `${W}p90/p90_clipout.wav`], [0.5, `${W}p90/p90_clipin.wav`], [0.57, `${W}p90/p90_cliphit.wav`], [0.76, `${W}p90/p90_boltback.wav`], [0.86, `${W}p90/p90_boltforward.wav`]],
+  sg553: [[0.15, `${W}sg556/sg556_clipout.mp3`], [0.48, `${W}sg556/sg556_clipin.wav`], [0.55, `${W}sg556/sg556_cliphit.wav`], [0.73, `${W}sg556/sg556_boltback.mp3`], [0.84, `${W}sg556/sg556_boltforward.wav`]],
   p2000: [[0.2, `${W}hkp2000/hkp2000_clipout.wav`], [0.55, `${W}hkp2000/hkp2000_clipin.mp3`], [0.8, `${W}hkp2000/hkp2000_sliderelease.wav`]],
   elite: [[0.15, `${W}elite/elite_clipout.wav`], [0.4, `${W}elite/elite_leftclipin.wav`], [0.6, `${W}elite/elite_rightclipin.wav`], [0.85, `${W}elite/elite_sliderelease.wav`]],
   p250: [[0.2, `${W}p250/p250_clipout.wav`], [0.55, `${W}p250/p250_clipin.mp3`], [0.8, `${W}p250/p250_sliderelease.wav`]],
