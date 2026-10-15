@@ -40,37 +40,43 @@
         <span>نام بازیکن</span>
         <input id="name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Player" dir="ltr" />
       </label>
-      <div class="map-picker">
-        <div class="picker-label">نقشهٔ تمرین</div>
-        <div class="seg maps" data-name="map">
-          <button data-v="dust2"><b>DUST II</b><small>کلاسیک</small></button>
-          <button data-v="mirage"><b>MIRAGE</b><small>کاخ و کانکتور</small></button>
-          <button data-v="inferno"><b>INFERNO</b><small>بنانا</small></button>
-        </div>
+      <div class="panel practice">
+        <h2>تمرین آفلاین با بات‌ها</h2>
+        <div class="picker-label">نقشه</div>
+        <div class="seg maps" data-name="map"></div>
+        <div class="picker-label">سختی بات‌ها</div>
+        <div class="seg" data-name="difficulty"><button data-v="easy">آسان</button><button data-v="normal">معمولی</button><button data-v="hard">سخت</button></div>
+        <button id="btn-offline" class="cta big-cta">شروع تمرین <small>Practice · Offline</small></button>
       </div>
-
-      <div class="panel server-lock">
-        <h2>سرورهای رسمی</h2>
-        <p>ساخت سرور فقط توسط ادمین انجام می‌شود. از لیست سمت راست یک سرور فعال را انتخاب کن.</p>
-        <div class="server-lock-badge">COMMUNITY SERVERS · ADMIN CONTROLLED</div>
-      </div>
-      <button id="btn-offline" class="ghost">تمرین آفلاین با بات‌ها <small>فقط Practice</small></button>
+      <p class="server-note">سرورهای آنلاین فقط توسط ادمین ساخته می‌شوند؛ از لیست سمت راست یکی را انتخاب کن.</p>
     </div>
 
     <div class="col col-browse">
       <div class="panel browser">
         <div class="browser-head">
-          <h2>سرورهای آنلاین</h2>
-          <div class="join-code">
-            <input id="code" maxlength="4" placeholder="کد" dir="ltr" autocomplete="off" />
-            <button id="btn-join">ورود</button>
+          <h2>سرورهای آنلاین <span id="sv-count" class="count"></span></h2>
+          <div class="head-actions"><span id="sv-ping" class="ping-chip"></span><button id="sv-refresh" class="icon-btn" title="تازه‌سازی" aria-label="تازه‌سازی">⟳</button><button id="sv-quick" class="quick">ورود سریع</button></div>
+        </div>
+        <div class="sv-tools">
+          <input id="sv-search" placeholder="جستجو: نام سرور، کد یا نقشه…" autocomplete="off" spellcheck="false" />
+          <div id="sv-maps" class="chips"></div>
+          <div class="toggles">
+            <label class="chk"><input type="checkbox" id="sv-nofull" /><span>پر نباشد</span></label>
+            <label class="chk"><input type="checkbox" id="sv-noempty" /><span>خالی نباشد</span></label>
+            <label class="chk"><input type="checkbox" id="sv-favs" /><span>★ موردعلاقه</span></label>
           </div>
         </div>
-        <div id="rooms" class="rooms"><div class="empty">هنوز سروری ساخته نشده. اولین نفر باش.</div></div>
+        <div class="sv-cols" dir="ltr"><i></i><button data-sort="title">SERVER</button><button data-sort="map">MAP</button><button data-sort="humans">PLAYERS</button><button data-sort="state">STATUS</button><i></i></div>
+        <div id="rooms" class="rooms"><div class="empty">در حال دریافت لیست سرورها…</div></div>
+        <div id="sv-detail" class="sv-detail" hidden></div>
+        <div class="join-code">
+          <span>ورود با کد</span><input id="code" maxlength="4" placeholder="ABCD" dir="ltr" autocomplete="off" />
+          <button id="btn-join">ورود</button>
+        </div>
       </div>
       <div class="controls-card" dir="ltr">
         <div><kbd>WASD</kbd> move</div><div><kbd>Space</kbd> jump</div><div><kbd>C / Ctrl</kbd> crouch</div><div><kbd>Shift</kbd> walk</div>
-        <div><kbd>B</kbd> buy</div><div><kbd>R</kbd> reload</div><div><kbd>E</kbd> plant / defuse</div><div><kbd>G</kbd> drop</div>
+        <div><kbd>B</kbd> buy menu</div><div><kbd>R</kbd> reload</div><div><kbd>E</kbd> plant / defuse</div><div><kbd>G</kbd> drop</div>
         <div><kbd>1-5</kbd> weapons</div><div><kbd>Tab</kbd> score</div><div><kbd>Y</kbd>/<kbd>U</kbd> chat</div><div><kbd>RMB</kbd> scope</div>
       </div>
     </div>

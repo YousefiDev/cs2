@@ -21,30 +21,42 @@ export function botRoundStart(room) {
   cts.forEach((p, i) => { p.ai.role = plan[i % plan.length]; const hs = def.holds[p.ai.role] || def.holds.A; p.ai.hold = hs[Math.floor(Math.random() * hs.length)]; p.ai.waitUntil = Date.now() + 6000 + Math.random() * 2500; });
   room.team('T').filter((p) => p.bot).forEach((p, i) => { const r = routes[i % routes.length]; p.ai.via = r.map((v) => [...v]); p.ai.role = site; p.ai.waitUntil = Date.now() + 6000 + Math.random() * 3000; });
 }
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 export function botBuy(room, p) {
   const m = () => p.money, T = p.team === 'T', pistolRound = room.round === 1 || room.round === 13;
   const buy = (k) => room.buy(p, k).ok;
-  if (pistolRound) { if (m() >= 650 && Math.random() < 0.6) buy('vest'); else if (m() >= 700 && Math.random() < 0.4) buy('deagle'); return; }
+  const sidearm = () => { // a varied pistol upgrade instead of always a Deagle
+    const opts = ['p250', 'elite', T ? 'tec9' : 'fiveseven', 'cz75'].filter((k) => m() >= WEAPONS[k].price); if (m() >= 700) opts.push('deagle', 'deagle');
+    if (opts.length) buy(pick(opts));
+  };
+  if (pistolRound) { if (m() >= 650 && Math.random() < 0.6) buy('vest'); else if (m() >= 300 && Math.random() < 0.5) sidearm(); return; }
   if (!p.w[1]) {
-    const awpTaken = room.team(p.team).some((q) => q !== p && q.w[1] && q.w[1].k === 'awp');
-    if (m() >= 5750 && !awpTaken && Math.random() < 0.3) buy('awp');
+    const taken = (k) => room.team(p.team).some((q) => q !== p && q.w[1] && q.w[1].k === k);
+    const r = Math.random();
+    if (m() >= 5750 && !taken('awp') && r < 0.3) buy('awp');
+    else if (m() >= 5650 && r < 0.38 && r > 0.3) buy(T ? 'g3sg1' : 'scar20');
+    else if (m() >= 5850 && r < 0.46 && r > 0.4) buy('m249');
+    else if (m() >= 2350 && r < 0.1 && !taken('ssg08')) buy('ssg08');
     else if (T ? m() >= 3700 : m() >= 4100) buy(T ? (Math.random() < 0.15 ? 'sg553' : 'ak47') : (Math.random() < 0.45 ? 'm4a1s' : Math.random() < 0.2 ? 'aug' : 'm4a4'));
     else if (m() >= (T ? 2700 : 3100) + 650 && Math.random() < 0.7) buy(T ? 'ak47' : 'm4a4');
     else if (m() >= (T ? 1800 : 2050) + 650 && Math.random() < 0.6) buy(T ? 'galil' : 'famas');
+    else if (m() >= 2650 && Math.random() < 0.25) buy('xm1014');
     else if (m() >= 2350 && Math.random() < 0.25) buy('p90');
-    else if (m() >= 2000 && Math.random() < 0.6) buy(T ? 'mac10' : 'mp9');
+    else if (m() >= 1950 && Math.random() < 0.5) buy(pick(['mp7', 'mp5sd', 'ump45', 'bizon', T ? 'mac10' : 'mp9']));
+    else if (m() >= 1700 && Math.random() < 0.3) buy(pick(['nova', T ? 'sawedoff' : 'mag7']));
   }
   if (m() >= 1000 && !(p.armor >= 100 && p.helmet)) buy('vesthelm'); else if (m() >= 650 && p.armor < 100) buy('vest');
   if (!T && m() >= 400 && Math.random() < 0.6) buy('kit');
   if (m() >= 300 && Math.random() < 0.45) buy('he');
-  if (!p.w[1] && m() >= 700 && Math.random() < 0.5) buy('deagle');
+  if (m() >= (T ? 400 : 600) && Math.random() < 0.3) buy(T ? 'molotov' : 'incendiary');
+  if (!p.w[1] && m() >= 700 && Math.random() < 0.5) buy(pick(['deagle', 'r8']));
 }
 const eyeOf = (p) => [p.x, p.y + (p.crouch ? PHYS.crouchEye : PHYS.eye), p.z];
 function scan(room, p, ai, now, prof) {
   const e = eyeOf(p); let best = null, bd = 1e9;
   // Engagement range depends on the weapon in hand, so pistol bots no longer freeze in 80 m standoffs.
   const it = p.w[p.active], wk = it ? it.k : 'knife', wd = WEAPONS[wk] || {};
-  const reach = wk === 'awp' ? 90 : wd.scope ? 75 : wd.slot === 1 && wd.rpm < 700 ? 65 : wd.slot === 1 ? 42 : wd.slot === 2 ? 38 : 28;
+  const reach = wd.pellets ? 24 : wk === 'awp' ? 90 : wd.scope ? 75 : wd.slot === 1 && wd.rpm < 700 ? 65 : wd.slot === 1 ? 42 : wd.slot === 2 ? 38 : 28;
   for (const q of room.players.values()) {
     if (!q.alive || q.team === p.team || q.team === 'SPEC') continue;
     const dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz); if (d > reach && !(ai.hurtBy === q.id && now - ai.hurtAt < 1500)) continue;
@@ -97,9 +109,9 @@ export function botThink(room, p, dt, now) {
   if (ai.throwAt) {
     if (p.active !== 4) { ai.throwAt = 0; }
     else if (now >= ai.throwAt) {
-      const a = ai.throwAim, dx = a[0] - p.x, dz = a[1] - p.z, hd = Math.hypot(dx, dz), v = 15.5;
+      const a = ai.throwAim, dx = a[0] - p.x, dz = a[1] - p.z, hd = Math.hypot(dx, dz), v = 17.1;
       const pitch = clamp(0.5 * Math.asin(clamp(20 * hd / (v * v), 0, 1)) - 0.12, -0.1, 0.75), yaw = Math.atan2(-dx, -dz);
-      p.yaw = yaw; p.pitch = pitch; room.throwNade(p, forward(yaw, pitch)); ai.throwAt = 0;
+      p.yaw = yaw; p.pitch = pitch; room.throwNade(p, forward(yaw, pitch), 1, true); ai.throwAt = 0;
     } else { stepMove(room.map, p, { wx: 0, wz: 0, speed }, dt); return; }
   }
   if (p.active === 4 && !ai.throwAt) { if (p.w[1]) room.switchSlot(p, 1); else if (p.w[2]) room.switchSlot(p, 2); else room.switchSlot(p, 3); }
@@ -119,13 +131,14 @@ export function botThink(room, p, dt, now) {
     if (w && w.melee) { wx = dx; wz = dz; } // knife: rush
     else if (hd < 10 || wk === 'deagle') { if (now > ai.strafeAt) { ai.strafe = -ai.strafe; ai.strafeAt = now + 350 + Math.random() * 500; } const f = forward(p.yaw, 0); wx = -f[2] * ai.strafe; wz = f[0] * ai.strafe; if (ai.burst > 2) { wx = wz = 0; } }
     if (hd > 18 && w && !w.melee && Math.random() < 0.002) crouch = true;
-    if (p.g && p.g.he > 0 && hd > 9 && hd < 24 && now >= ai.reactAt && Math.random() < 0.012) { room.switchSlot(p, 4, 'he'); if (p.active === 4) { ai.throwAt = now + 650; ai.throwAim = [tgt.x, tgt.z]; } }
+    const tn = p.g && ['he', 'molotov', 'incendiary'].find((k) => p.g[k] > 0);
+    if (tn && hd > 9 && hd < 24 && now >= ai.reactAt && Math.random() < 0.012) { room.switchSlot(p, 4, tn); if (p.active === 4) { ai.throwAt = now + 650; ai.throwAim = [tgt.x, tgt.z]; } }
     const tol = Math.max(prof.fireTol, 0.6 / Math.max(1, hd));
     const ready = now >= ai.reactAt && now >= ai.pauseUntil && err < tol;
     if (ready && w && !w.melee && item && item.mag > 0) {
       const sp = Math.hypot(p.vx, p.vz); if (sp > speed * 0.4 && hd > 10) { wx = wz = 0; }
       else {
-        const s = inaccuracy(w, { speed: sp, grounded: p.onGround, crouch: p.crouch, shots: p.shots + 1, scoped: wk === 'awp' });
+        const s = inaccuracy(w, { speed: sp, grounded: p.onGround, crouch: p.crouch, shots: p.shots + 1, scoped: !!w.scope && wk !== 'sg553' && wk !== 'aug' });
         const a = Math.random() * Math.PI * 2, r = s * Math.random(), f = forward(p.yaw + Math.cos(a) * r, p.pitch + Math.sin(a) * r);
         if (room.fire(p, e, f, now, wk)) {
           p.pitch += (w.kick || 0) * 0.35; ai.burst++;
@@ -166,5 +179,5 @@ export function botThink(room, p, dt, now) {
     ai.stuckAt = now + 900; ai.stuckX = p.x; ai.stuckZ = p.z;
   }
   if (now < ai.unstuckUntil && moving) { const l = Math.hypot(wx, wz); const px = -wz / l * ai.unstuckDir, pz = wx / l * ai.unstuckDir; wx = wx / l * 0.3 + px; wz = wz / l * 0.3 + pz; }
-  stepMove(room.map, p, { wx, wz, jump: jump && p.onGround, crouch, walk, speed: wk === 'awp' && p.scoped ? 2.5 : speed }, dt);
+  stepMove(room.map, p, { wx, wz, jump: jump && p.onGround, crouch, walk, speed: w && w.scopedSpeed && p.scoped ? w.scopedSpeed : speed }, dt);
 }

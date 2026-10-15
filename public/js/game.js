@@ -16,7 +16,7 @@ const TEAMNAME = { T: 'Terrorists', CT: 'Counter-Terrorists' };
 export class Game {
   constructor(ctx) {
     Object.assign(this, ctx);
-    this.remotes = new Map(); this.dropMeshes = new Map(); this.nadeMeshes = new Map(); this.smokeFx = new Map(); this.blind = 0; this.blindMax = 0; this.effects = []; this.decals = []; this.decalIdx = 0;
+    this.remotes = new Map(); this.dropMeshes = new Map(); this.nadeMeshes = new Map(); this.smokeFx = new Map(); this.fireFx = new Map(); this.blind = 0; this.blindMax = 0; this.effects = []; this.decals = []; this.decalIdx = 0;
     this.keys = {}; this.mouseL = false; this.inRoom = false; this.offset = 0; this.rtt = 0;
     this.roster = []; this.rosterMap = new Map(); this.score = { T: 0, CT: 0 }; this.round = 0; this.phase = 'warmup'; this.phaseEnd = 0; this.liveStart = 0;
     this.bomb = { state: 'none' }; this.you = null; this.s = { x: 64, y: 0, z: 64, vx: 0, vy: 0, vz: 0, onGround: true, crouch: false };
@@ -33,7 +33,7 @@ export class Game {
     const on = (ev, f) => net.on(ev, f.bind(this));
     on('init', this.onInit); on('roster', this.onRoster); on('snap', this.onSnap); on('you', this.onYou); on('spawn', this.onSpawn); on('correct', this.onCorrect);
     on('round', this.onRound); on('bomb', this.onBomb); on('drops', this.onDrops); on('fx', this.onFx); on('hit', this.onHit); on('hurt', this.onHurt);
-    on('kill', this.onKill); on('profile', this.onProfile); on('vote', this.onVote); on('act', this.onAct); on('boom', this.onBoom); on('smokes', this.onSmokes);
+    on('kill', this.onKill); on('profile', this.onProfile); on('vote', this.onVote); on('act', this.onAct); on('boom', this.onBoom); on('smokes', this.onSmokes); on('fires', this.onFires);
     on('server:closed', this.onServerClosed); on('msg', (d) => this.hud.center(d.text, d.sub || '', '', 2600)); on('chat', (d) => this.hud.chat(d));
     if (!net.offline) { clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.ping(), 2000); this.ping(); }
   }
@@ -50,7 +50,7 @@ export class Game {
     if (!this.net.offline && !this.pingTimer) { this.pingTimer = setInterval(() => this.ping(), 2000); this.ping(); }
     this.room = d; this.meId = d.you; this.inRoom = true; this.score = d.score; this.round = d.round; this.phase = d.phase; this.phaseEnd = d.phaseEnd;
     if (!this.offsetInit && this.net.offline) this.offset = 0; else if (!this.offsetInit) this.offset = d.t - Date.now();
-    this.onRoster(d.roster); this.rankProfile = d.profile || null; this.onBomb(d.bomb); this.onDrops(d.drops); this.onSmokes(d.smokes || []); this.alive = false; this.you = null;
+    this.onRoster(d.roster); this.rankProfile = d.profile || null; this.onBomb(d.bomb); this.onDrops(d.drops); this.onSmokes(d.smokes || []); this.onFires(d.fires || []); this.alive = false; this.you = null;
     this.onMap && this.onMap(d.map); this.hud.show(true); this.hud.buildRadar(this.map); $('p-code').textContent = `SERVER ${d.code}`; $('ts-room').textContent = `${d.title} · ${d.code}`;
     this.onEnter && this.onEnter(d);
     const me = this.rosterMap.get(this.meId);
@@ -94,7 +94,34 @@ export class Game {
         const dur = Math.max(0, amt) * 4.8; if (dur > this.blind) { this.blind = dur; this.blindMax = dur; } this.sound.ring(Math.min(1, amt));
       }
     } else if (b.k === 'smoke') this.sound.smokePop(p);
+    else if (b.k === 'molotov' || b.k === 'incendiary') this.sound.smokePop(p);
+    else if (b.k === 'decoy') this.sound.click(0.3, 1500, p);
   }
+  // Molotov / incendiary flames: a flickering additive sprite cloud, rebuilt from the server's list of active fires.
+  onFires(list) {
+    list = list || []; const ids = new Set(list.map((f) => f.id));
+    for (const [id, fx] of this.fireFx) if (!ids.has(id)) { fx.fade = true; }
+    for (const f of list) {
+      if (this.fireFx.has(f.id)) continue;
+      if (!this.texFire) this.texFire = TX.radial('rgba(255,225,130,1)', 'rgba(255,80,10,0)');
+      const g = new THREE.Group(); g.position.set(f.x, f.y, f.z); const puffs = [];
+      const light = new THREE.PointLight('#ff7a1a', 0, 9, 2); light.position.y = 0.8; g.add(light);
+      for (let i = 0; i < 46; i++) {
+        const m = new THREE.SpriteMaterial({ map: this.texFire, color: new THREE.Color(i % 3 ? '#ff8a24' : '#ffd24a'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 });
+        const sp = new THREE.Sprite(m); const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * f.r * 0.9;
+        sp.userData = { x: Math.cos(a) * r, z: Math.sin(a) * r, ph: Math.random() * 6.28, sz: 0.9 + Math.random() * 1.1, sp: 0.8 + Math.random() * 1.2 }; sp.position.set(sp.userData.x, 0.2, sp.userData.z); g.add(sp); puffs.push(sp);
+      }
+      this.scene.add(g); this.fireFx.set(f.id, { g, puffs, light, t: 0, k: 1, fade: false });
+    }
+  }
+  updateFires(dt) {
+    for (const [id, fx] of this.fireFx) {
+      fx.t += dt; if (fx.fade) { fx.k -= dt / 0.9; if (fx.k <= 0) { this.scene.remove(fx.g); fx.puffs.forEach((p) => p.material.dispose()); fx.light.dispose?.(); this.fireFx.delete(id); continue; } }
+      const grow = Math.min(1, fx.t / 0.5) * fx.k; fx.light.intensity = 14 * grow * (0.85 + 0.15 * Math.sin(fx.t * 17));
+      for (const p of fx.puffs) { const u = p.userData, c = (fx.t * u.sp + u.ph) % 1.0; p.position.set(u.x + Math.sin(fx.t * 3 + u.ph) * 0.12, 0.1 + c * 1.5, u.z); p.scale.setScalar(u.sz * (1 - c * 0.55) * (0.4 + 0.6 * grow)); p.material.opacity = Math.min(1, grow) * (1 - c) * 0.85; }
+    }
+  }
+
   smokeBetween(a, b) {
     for (const s of this.smokeList || []) {
       const cy = s.y + 1.4, dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L2 = dx * dx + dy * dy + dz * dz || 1;
@@ -126,6 +153,7 @@ export class Game {
   }
   updateNades(dt) {
     for (const g of this.nadeMeshes.values()) { if (g.userData.to) g.position.lerp(g.userData.to, Math.min(1, dt * 18)); g.rotation.x += dt * 9; g.rotation.y += dt * 5; }
+    this.updateFires(dt);
     for (const [id, fx] of this.smokeFx) {
       fx.t += dt; const grow = Math.min(1, fx.t / 1.6), e = 1 - Math.pow(1 - grow, 3);
       if (fx.fade) { fx.k -= dt / 2.5; if (fx.k <= 0) { this.scene.remove(fx.g); fx.puffs.forEach((p) => p.material.dispose()); this.smokeFx.delete(id); continue; } }
@@ -205,7 +233,8 @@ export class Game {
   }
   onFx(f) {
     const pos = new THREE.Vector3(f.o[0], f.o[1], f.o[2]); const r = this.remotes.get(f.id); if (r) r.lastShot = performance.now();
-    this.sound.shot(f.w, pos);
+    if (f.x === 2) { this.sound.shot(f.w, pos); this.flashAt(pos, true); return; } // decoy: sound + muzzle glint only
+    if (!f.x) this.sound.shot(f.w, pos); // extra shotgun pellets are silent
     if (f.w === 'knife') return;
     if (r && r.rig.gun) { const mz = r.rig.gun.localToWorld(r.rig.gun.userData.muzzle.clone()); this.flashAt(mz, true); this.tracer(mz, new THREE.Vector3(...f.e)); }
     else this.tracer(pos, new THREE.Vector3(...f.e));
@@ -273,7 +302,7 @@ export class Game {
     this._modal = false; document.body.classList.remove('ui-modal');
     this.inRoom = false; this.alive = false; this.you = null; this.room = null; this.closeMenus(); document.exitPointerLock?.();
     for (const id of [...this.remotes.keys()]) this.removeRemote(id);
-    for (const m of this.dropMeshes.values()) this.scene.remove(m); this.dropMeshes.clear(); for (const g of this.nadeMeshes.values()) this.scene.remove(g); this.nadeMeshes.clear(); this.onSmokes([]); for (const fx of this.smokeFx.values()) this.scene.remove(fx.g); this.smokeFx.clear(); this.blind = 0; if (this.bombMesh) this.bombMesh.visible = false;
+    for (const m of this.dropMeshes.values()) this.scene.remove(m); this.dropMeshes.clear(); for (const g of this.nadeMeshes.values()) this.scene.remove(g); this.nadeMeshes.clear(); this.onSmokes([]); for (const fx of this.smokeFx.values()) this.scene.remove(fx.g); this.smokeFx.clear(); for (const fx of this.fireFx.values()) this.scene.remove(fx.g); this.fireFx.clear(); this.blind = 0; if (this.bombMesh) this.bombMesh.visible = false;
     this.clearDecals(); this.hud.show(false); $('teamsel').hidden = true; $('pause').hidden = true; if (this.vm) this.vm.group.visible = false;
   }
   closeMenus() { this.buyOpen = false; this.hud.buyMenu(false); this.sbOpen = false; this.hud.scoreboard(false); this.closeChat(); $('pause').hidden = true; }
@@ -359,7 +388,7 @@ export class Game {
   tryFire(now, alt = false) {
     const it = this.activeItem(), w = this.activeW(); if (!it || !w || !this.alive) return;
     if (this.you.a === 5) { if (!this.c4Held) { this.c4Held = true; this.net.emit('use'); } return; }
-    if (this.you.a === 4) { if (!this.trigger) this.throwNade(now, false); this.trigger = true; return; }
+    if (this.you.a === 4) { if (!this.trigger) this.throwNade(now, this.mouseR && !this.touch ? 0.5 : 1); this.trigger = true; return; }
     if (this.phase === 'freeze' || now < this.nextFire || now < this.drawEnd || this.reloadUntil) return;
     if (!w.auto && this.trigger && !w.melee) return;
     if (w.melee && alt && this.altTrigger) return;
@@ -376,9 +405,20 @@ export class Game {
     this.net.emit('shot', { o: eye.map((v) => +v.toFixed(3)), d: dir.map((v) => +v.toFixed(5)), t: Math.round(this.serverNow() - INTERP), w: it.k, alt: !!alt });
     this.sound.shot(it.k, null);
     // local effects (prediction only, damage is server-side)
-    const range = w.melee ? ((alt && w.altRange) || w.range) : 220; const wall = rayWorld(this.map, eye, dir, range); let best = null;
+    const range = w.melee ? ((alt && w.altRange) || w.range) : (w.range || 220); const wall = rayWorld(this.map, eye, dir, range); let best = null;
     for (const r of this.remotes.values()) { if (!r.alive || r.team === this.team) continue; const h = rayPlayer(eye, dir, { x: r.x, y: r.y, z: r.z, crouch: !!(r.fl & 2) }, best ? best.t : wall.t); if (h) best = h; }
     const T = best ? best.t : wall.t, end = new THREE.Vector3(eye[0] + dir[0] * T, eye[1] + dir[1] * T, eye[2] + dir[2] * T);
+    if (w.pellets > 1) {
+      const mz0 = this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
+      for (let i = 0; i < w.pellets; i++) {
+        const pd = spreadDir(dir, w.spread, Math.random), pw = rayWorld(this.map, eye, pd, 80); let pb = null;
+        for (const r of this.remotes.values()) { if (!r.alive || r.team === this.team) continue; const h = rayPlayer(eye, pd, { x: r.x, y: r.y, z: r.z, crouch: !!(r.fl & 2) }, pb ? pb.t : pw.t); if (h) pb = h; }
+        const pT = pb ? pb.t : pw.t, pe = new THREE.Vector3(eye[0] + pd[0] * pT, eye[1] + pd[1] * pT, eye[2] + pd[2] * pT);
+        if (i < 5) this.tracer(mz0, pe); if (pb) this.blood(pe); else if (pw.n) this.impact(pe, new THREE.Vector3(...pw.n), true);
+      }
+      this.flashAt(this.camera.position, false); this.vmFlash = now + 45; this.vmKick = 1.6;
+      this.punchP += w.kick * 1.4; this.punchY += (Math.random() - 0.5) * w.side * 2; return;
+    }
     if (w.melee) { this.vmKick = alt ? 1.35 : 1; this.vmKnifeAlt = !!alt; if (!best && wall.t < range && wall.n) this.impact(end, new THREE.Vector3(...wall.n), true); if (best) this.blood(end); return; }
     const mz = this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
     if (this.shotsFired % 2 === 1 || !w.auto) this.tracer(mz, end);
@@ -386,11 +426,11 @@ export class Game {
     if (best) this.blood(end); else if (wall.n) this.impact(end, new THREE.Vector3(...wall.n), true);
     const n = Math.min(this.shotsFired, 12);
     this.punchP += w.kick * (1 + n * 0.05); this.punchY += (Math.random() - 0.5) * w.side * 2 + (n > 4 ? Math.sin(n * 0.8) * w.side * 1.6 : 0);
-    if (it.k === 'awp' && this.scope) { this.scope = 0; this.awpRescope = now + interval; }
+    if (w.bolt && this.scope) { this.scope = 0; this.awpRescope = now + interval; }
   }
-  throwNade(now, soft) {
+  throwNade(now, str = 1) {
     const it = this.activeItem(); if (!it || !it.nade || !this.alive || this.phase === 'freeze' || now < this.drawEnd || now < this.nextFire || it.mag <= 0) return;
-    this.nextFire = now + 800; this.vmKick = 1; this.net.emit('throw', { d: forward(this.yaw, this.pitch).map((v) => +v.toFixed(4)), soft: !!soft }); this.sound.nadeThrow();
+    this.nextFire = now + 800; this.vmKick = 1; this.net.emit('throw', { d: forward(this.yaw, this.pitch).map((v) => +v.toFixed(4)), str }); this.sound.nadeThrow();
     this.drawEnd = now + 650;
   }
   reload() {
@@ -410,7 +450,7 @@ export class Game {
     this.lastSlot = this.you.a; this.you.a = slot; this.pendingSwitch = performance.now(); this.net.emit('sw', { slot });
     const w = WEAPONS[slot === 5 ? 'c4' : this.you.w[slot].k]; this.drawEnd = performance.now() + (w.draw || 0.4) * 1000; this.scope = 0; this.reloadUntil = 0; this.shotsFired = 0; this.sound.draw();
   }
-  cycleSlot(dir) { if (!this.you) return; const g = this.you.g || {}; const order = [1, 2, 3, 4, 5].filter((s) => (s === 5 ? this.you.b : s === 4 ? NADES.some((n) => g[n] > 0) : this.you.w[s])); const i = order.indexOf(this.you.a); this.switchSlot(order[(i + dir + order.length) % order.length]); }
+  cycleSlot(dir) { if (!this.you) return; const g = this.you.g || {}; const order = [1, 2, 3, 6, 4, 5].filter((s) => (s === 5 ? this.you.b : s === 4 ? NADES.some((n) => g[n] > 0) : this.you.w[s])); const i = order.indexOf(this.you.a); this.switchSlot(order[(i + dir + order.length) % order.length]); }
   toggleScope() { const w = this.activeW(); if (!w || !w.scope || this.reloadUntil || !this.alive) { this.scope = 0; return; } this.scope = (this.scope + 1) % (w.scope.length + 1); this.sound.click(0.15, 3000); }
   die(e) {
     if (!this.alive && this.deathAt) return; this.alive = false; this.deathAt = performance.now(); this.scope = 0; this.closeMenus();
@@ -456,7 +496,7 @@ export class Game {
     if (!g.visible) return;
     if (this.vmKey !== it.k || this.vmTeam !== this.team) {
       if (this.vmGun) g.remove(this.vmGun); if (this.vmArms) g.remove(this.vmArms);
-      this.vmGun = makeGun(it.k); if (['he', 'flash', 'smoke'].includes(it.k)) this.vmGun.scale.setScalar(1.35); this.vmGun.traverse((o) => { if (o.isMesh) o.castShadow = false; }); g.add(this.vmGun);
+      this.vmGun = makeGun(it.k); if (NADES.includes(it.k)) this.vmGun.scale.setScalar(1.35); this.vmGun.traverse((o) => { if (o.isMesh) o.castShadow = false; }); g.add(this.vmGun);
       this.vmArms = makeViewArms(this.team, it.k); g.add(this.vmArms); this.vmKey = it.k; this.vmTeam = this.team;
       const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texStar, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); flash.scale.setScalar(0.32); flash.position.copy(this.vmGun.userData.muzzle); flash.visible = false; this.vmGun.add(flash); this.vmFlashSprite = flash;
     }
@@ -566,7 +606,7 @@ export class Game {
   sell(k) { this.sound.ui(800); this.net.emit('sell', { item: k }, (r) => { if (!r || !r.ok) { this.hud.toast(r && r.error ? r.error : 'Cannot sell'); this.sound.ui(300); } else { this.sound.money(); this.hud.toast(`Sold +$${r.price}`); } }); }
   toggleBuy(v = !this.buyOpen) {
     if (v && !this.canBuy()) { this.hud.toast(this.alive ? 'You are not in a buy zone / buy time is over' : 'You are dead'); return; }
-    this.buyOpen = v; if (v) { document.exitPointerLock?.(); this.renderBuy(); } else { this.hud.buyMenu(false); this.lock(); }
+    this.buyOpen = v; if (v) { this.hud.bmMode = 'cat'; document.exitPointerLock?.(); this.renderBuy(); } else { this.hud.buyMenu(false); this.lock(); }
   }
   openChat(team) { this.chatOpen = true; this.chatTeam = team; const i = $('chat-in'), send = $('chat-send'); i.hidden = false; if (send) send.hidden = false; i.placeholder = team ? 'Team: ' : 'All: '; $('chat').classList.add('open'); this.keys = {}; setTimeout(() => i.focus(), 0); }
   closeChat() { this.chatOpen = false; const i = $('chat-in'), send = $('chat-send'); i.hidden = true; if (send) send.hidden = true; i.value = ''; i.blur(); $('chat').classList.remove('open'); }
@@ -578,13 +618,18 @@ export class Game {
     if (!$('teamsel').hidden || !$('settings').hidden) return;
     if (e.code === 'Tab') { e.preventDefault(); this.sbOpen = true; this.hud.scoreboard(true, this.roster, this.meId, this.score, this.room); return; }
     if (e.repeat) return;
+    if (this.buyOpen) {
+      const dm = /^(Digit|Numpad)(\d)$/.exec(e.code);
+      if (dm) { e.preventDefault(); this.hud.buyKey(+dm[2]); return; }
+      if (e.code === 'Backspace') { e.preventDefault(); this.hud.buyBack(); return; }
+    }
     this.keys[e.code] = true;
     switch (e.code) {
       case 'KeyB': this.toggleBuy(); break;
-      case 'Escape': if (this.buyOpen) this.toggleBuy(false); break;
+      case 'Escape': if (this.buyOpen) { if (!this.hud.buyBack()) this.toggleBuy(false); } break;
       case 'KeyY': e.preventDefault(); this.openChat(false); break;
       case 'KeyU': e.preventDefault(); this.openChat(true); break;
-      case 'Digit1': this.switchSlot(1); break; case 'Digit2': this.switchSlot(2); break; case 'Digit3': this.switchSlot(3); break; case 'Digit4': this.switchSlot(4); break; case 'Digit5': this.switchSlot(5); break;
+      case 'Digit1': this.switchSlot(1); break; case 'Digit2': this.switchSlot(2); break; case 'Digit3': this.switchSlot(3); break; case 'Digit4': this.switchSlot(4); break; case 'Digit5': this.switchSlot(5); break; case 'Digit6': this.switchSlot(6); break;
       case 'KeyQ': if (this.lastSlot) this.switchSlot(this.lastSlot); break;
       case 'KeyR': this.reload(); break;
       case 'KeyG': if (this.alive) { this.net.emit('drop'); this.sound.click(0.2, 900); } break;
@@ -609,7 +654,7 @@ export class Game {
     if (!this.inRoom) return;
     if (!this.locked) return;
     if (e.button === 0) { this.mouseL = true; if (!this.alive) this.specNext(1); }
-    if (e.button === 2) { if (this.alive && this.you && this.you.a === 4) this.throwNade(performance.now(), true); else if (this.alive && this.activeW()?.melee) { this.mouseR = true; this.tryFire(performance.now(), true); } else if (this.alive) this.toggleScope(); else this.specNext(-1); }
+    if (e.button === 2) { if (this.alive && this.you && this.you.a === 4) { this.mouseR = true; this.throwNade(performance.now(), this.mouseL ? 0.5 : 0); } else if (this.alive && this.activeW()?.melee) { this.mouseR = true; this.tryFire(performance.now(), true); } else if (this.alive) this.toggleScope(); else this.specNext(-1); }
   }
   onMouseUp(e) { if (e.button === 0) this.mouseL = false; if (e.button === 2) this.mouseR = false; }
   onMouseMove(e) {

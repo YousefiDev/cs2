@@ -54,7 +54,7 @@ export class HUD {
     const name = active === 5 ? 'C4' : active === 4 && w ? w.name : w ? w.name : ''; $('wname').textContent = name;
     if (!item || !w || w.melee || w.nade || active === 5) { $('mag').textContent = '—'; $('res').textContent = ''; $('mag').classList.remove('low'); }
     else { $('mag').textContent = item.mag; $('res').textContent = '/ ' + item.res; $('mag').classList.toggle('low', item.mag <= Math.ceil(w.mag * 0.2)); }
-    const html = [1, 2, 3].filter((s) => slots[s]).map((s) => `<div class="slot ${active === s ? 'on' : ''}"><b>${s}</b>${esc(WEAPONS[slots[s].k].name)}</div>`);
+    const html = [1, 2, 3, 6].filter((s) => slots[s]).map((s) => `<div class="slot ${active === s ? 'on' : ''}"><b>${s}</b>${esc(WEAPONS[slots[s].k].name)}</div>`);
     const grenades = ['he', 'flash', 'smoke'].filter((k) => this.lastNades?.[k] > 0);
     if (active === 4 || grenades.length) html.push(`<div class="slot nade ${active === 4 ? 'on' : ''}"><b>4</b>${active === 4 && w ? esc(w.name) : 'Grenades'}</div>`);
     if (hasBomb) html.push(`<div class="slot bomb ${active === 5 ? 'on' : ''}"><b>5</b>C4</div>`);
@@ -101,46 +101,69 @@ export class HUD {
       <div class="sb-team CT"><h4><span>COUNTER-TERRORISTS</span><span>${score.CT}</span></h4>${hdr}${rows('CT')}</div>
       <div class="sb-team T"><h4><span>TERRORISTS</span><span>${score.T}</span></h4>${hdr}${rows('T')}</div>${spec ? `<div class="sb-head"><span>SPECTATORS: ${spec}</span></div>` : ''}`;
   }
+  // ---------------- CS2-style buy menu ----------------
+  // Left: numbered categories. Middle: numbered items with icon/price. Right: detail card with stat bars.
+  // Keyboard: B opens, 1-6 picks a category, then 1-9/0 buys the item (see buyKey), Backspace goes back, Esc closes.
+  buyKey(digit) {
+    const bm = $('buymenu'); if (bm.hidden || !this._cats) return false;
+    if (this.bmMode !== 'item') { const c = this._cats[digit - 1]; if (!c) return true; this.bmTab = c.id; this.bmMode = 'item'; this._bmHtml = ''; this._rerenderBuy && this._rerenderBuy(); return true; }
+    const c = this._cats.find((x) => x.id === this.bmTab); const k = c && c.keys[digit === 0 ? 9 : digit - 1]; if (k && this._onBuy) this._onBuy(k); return true;
+  }
+  buyBack() { if (this.bmMode === 'item') { this.bmMode = 'cat'; this._bmHtml = ''; this._rerenderBuy && this._rerenderBuy(); return true; } return false; }
   buyMenu(show, you, team, timeLeft, onBuy, onClose, onSell) {
-    const bm = $('buymenu'); bm.hidden = !show; if (!show) { this._bmHtml = ''; return; }
-    this._onBuy = onBuy; this._onClose = onClose; this._onSell = onSell;
+    const bm = $('buymenu'); bm.hidden = !show; if (!show) { this._bmHtml = ''; this.bmMode = 'cat'; return; }
+    this._onBuy = onBuy; this._onClose = onClose; this._onSell = onSell; this._you = you; this._team = team;
     const owned = new Set([you.w[1] && you.w[1].k, you.w[2] && you.w[2].k]);
-    const item = (k) => {
-      const w = WEAPONS[k], g = GEAR[k], it = w || g; const tm = it.team; if (tm && tm !== team) return '';
-      let price = it.price;
-      const locked = false;
-      if (k === 'vesthelm' && you.ar >= 100 && !you.hm) price = 350;
-      const own = owned.has(k) || (k === 'vest' && you.ar >= 100) || (k === 'vesthelm' && you.ar >= 100 && you.hm) || (k === 'kit' && you.kit) || (w && w.nade && (you.g?.[k] || 0) >= w.max);
-      const no = !own && you.money < price;
-      const info = w ? (w.nade ? `${you.g?.[k] || 0}/${w.max}` : `${w.dmg} dmg · ${w.rpm} rpm${w.mag ? ' · ' + w.mag + '/' + w.res : ''}`) : k === 'kit' ? 'defuse in 5s' : 'armor 100';
-      // Sell-back offer: only for things bought this round (the server decides and sends `sl`).
-      const sl = you.sl || {}; let sellP = 0, sellN = 0;
-      if (w && w.nade) { sellN = sl.g?.[k] || 0; sellP = sellN ? w.price : 0; }
-      else if (w) { sellP = (you.w[w.slot] && you.w[w.slot].k === k && sl[w.slot]) || 0; }
-      else sellP = sl[k] || 0;
-      const sellBtn = sellP ? `<span class="bm-sell" data-sell="${k}">SELL${sellN > 1 ? ' ×1' : ''} +$${sellP}</span>` : '';
-      return `<button class="bm-item ${no ? 'no' : ''} ${own ? 'own' : ''}" data-k="${k}"><b>${esc(it.name)}</b><span>$${price}</span><small>${info}</small>${sellBtn}</button>`;
+    const priceOf = (k) => { const it = WEAPONS[k] || GEAR[k]; return k === 'vesthelm' && you.ar >= 100 && !you.hm ? 350 : it.price; };
+    const isOwn = (k) => { const w = WEAPONS[k]; return owned.has(k) || (k === 'vest' && you.ar >= 100) || (k === 'vesthelm' && you.ar >= 100 && you.hm) || (k === 'kit' && you.kit) || (w && w.nade && (you.g?.[k] || 0) >= w.max); };
+    const sellInfo = (k) => {
+      const w = WEAPONS[k], sl = you.sl || {}; let p = 0, n = 0;
+      if (w && w.nade) { n = sl.g?.[k] || 0; p = n ? w.price : 0; } else if (w) p = (you.w[w.slot] && you.w[w.slot].k === k && sl[w.slot]) || 0; else p = sl[k] || 0;
+      return { p, n };
     };
-    const cats = BUY_MENU.map((c) => ({ ...c, html: c.items.map(item).join('') })).filter((c) => c.html);
-    if (!cats.some((c) => c.title === this.bmTab)) this.bmTab = cats.find((c) => c.title === 'Rifles') ? 'Rifles' : cats[0]?.title;
-    const html = `<div class="bm-head"><h3>BUY MENU</h3><span class="bm-time"></span><span class="bm-money">$${you.money}</span><button class="bm-close" data-close="1" aria-label="close">×</button></div>
-      <div class="bm-tabs">${cats.map((c) => `<button data-tab="${c.title}" class="${c.title === this.bmTab ? 'on' : ''}">${c.title}</button>`).join('')}</div>
-      <div class="bm-cols">${cats.map((c) => `<div class="bm-col ${c.title === this.bmTab ? 'on' : ''}"><h4>${c.title}</h4>${c.html}</div>`).join('')}</div>
-      <div class="bm-foot">Click to buy · SELL refunds this round's purchases · B / Esc to close</div>`;
-    // Only rebuild when something actually changed, otherwise a tap that lands during a re-render is lost.
+    const cats = BUY_MENU.map((c) => ({ ...c, keys: c.items.filter((k) => { const it = WEAPONS[k] || GEAR[k]; return !(it.team && it.team !== team); }) })).filter((c) => c.keys.length);
+    this._cats = cats; if (!cats.some((c) => c.id === this.bmTab)) this.bmTab = (cats.find((c) => c.id === 'rifles') || cats[0]).id;
+    const cur = cats.find((c) => c.id === this.bmTab);
+    const row = (k, i) => {
+      const it = WEAPONS[k] || GEAR[k], price = priceOf(k), own = isOwn(k), no = !own && you.money < price, sl = sellInfo(k);
+      const icon = WEAPONS[k] ? `<img src="/img/guns/${k}.png" alt="" draggable="false" />` : `<span class="bm-gear g-${k}"></span>`;
+      const cnt = WEAPONS[k] && WEAPONS[k].nade ? `<em>${you.g?.[k] || 0}/${WEAPONS[k].max}</em>` : '';
+      const sell = sl.p ? `<span class="bm-sell" data-sell="${k}">SELL +$${sl.p}</span>` : '';
+      return `<button class="bm-item ${no ? 'no' : ''} ${own ? 'own' : ''}" data-k="${k}"><kbd>${i === 9 ? 0 : i + 1}</kbd>${icon}<b>${esc(it.name)}${cnt}</b><span class="bm-price">$${price}</span>${sell}</button>`;
+    };
+    const col = (c, ci) => `<section class="bm-col ${c.id === this.bmTab ? 'on' : ''} ${this.bmMode === 'item' && c.id === this.bmTab ? 'pick' : ''}" data-tab="${c.id}"><h4><kbd>${ci + 1}</kbd>${c.title}<small>${c.fa}</small></h4>${c.keys.map(row).join('')}</section>`;
+    const html = `<div class="bm-head"><h3>BUY MENU</h3><span class="bm-sub">${team === 'T' ? 'TERRORISTS' : 'COUNTER-TERRORISTS'}</span><span class="bm-time"></span><span class="bm-money">$${you.money}</span><button class="bm-close" data-close="1" aria-label="close">×</button></div>
+      <div class="bm-cols">${cats.map(col).join('')}</div>
+      <aside class="bm-detail" id="bm-detail"></aside>
+      <div class="bm-foot">${this.bmMode === 'item' ? 'عدد آیتم را بزن تا بخری · Backspace: برگشت به ستون‌ها' : 'عدد ستون را بزن (۱ تا ۶) · یا مستقیم کلیک کن'} · SELL = فروش خرید همین راند · B / Esc = بستن</div>`;
     if (html !== this._bmHtml) {
-      const sc = bm.querySelector('.bm-cols')?.scrollTop || 0;
-      bm.innerHTML = html; this._bmHtml = html; const cols = bm.querySelector('.bm-cols'); if (cols) cols.scrollTop = sc;
+      const sc = bm.querySelector('.bm-cols')?.scrollLeft || 0;
+      bm.innerHTML = html; this._bmHtml = html; const l = bm.querySelector('.bm-cols'); if (l) l.scrollLeft = sc;
+      const first = cur.keys.includes(this.bmSel) ? this.bmSel : cur.keys[0]; this.bmSel = first; this.bmDetail(first);
     }
     const t = bm.querySelector('.bm-time'); if (t) t.textContent = timeLeft;
     if (!bm._wired) {
       bm._wired = true;
+      bm.addEventListener('mouseover', (e) => { const it = e.target.closest('.bm-item'); if (it && it.dataset.k !== this.bmSel) { this.bmSel = it.dataset.k; this.bmDetail(this.bmSel); } });
       bm.addEventListener('click', (e) => {
-        const tab = e.target.closest('[data-tab]'); if (tab) { this.bmTab = tab.dataset.tab; this._bmHtml = ''; this._rerenderBuy && this._rerenderBuy(); return; }
         if (e.target.closest('[data-close]')) { this._onClose && this._onClose(); return; }
         const sell = e.target.closest('[data-sell]'); if (sell) { e.preventDefault(); e.stopPropagation(); this._onSell && this._onSell(sell.dataset.sell); return; }
-        const it = e.target.closest('.bm-item'); if (it && this._onBuy) this._onBuy(it.dataset.k);
+        const it = e.target.closest('.bm-item'); if (it) { this.bmSel = it.dataset.k; this.bmDetail(it.dataset.k); if (this._onBuy) this._onBuy(it.dataset.k); }
       });
     }
+    bm.querySelectorAll('.bm-item').forEach((el) => el.classList.toggle('sel', el.dataset.k === this.bmSel));
+  }
+  bmDetail(k) {
+    const box = $('bm-detail'); if (!box || !k) return; const w = WEAPONS[k], you = this._you || {};
+    document.querySelectorAll('#buymenu .bm-item').forEach((el) => el.classList.toggle('sel', el.dataset.k === k));
+    const chip = (a, b) => `<span><i>${a}</i><b>${b}</b></span>`;
+    if (!w) { const d = { kit: ['Defuse Kit', 'خنثی‌سازی بمب در ۵ ثانیه به‌جای ۱۰'], vest: ['Kevlar Vest', 'جلیقه ضدگلوله · ۱۰۰ زره'], vesthelm: ['Kevlar + Helmet', 'جلیقه و کلاه · محافظت از سر'] }[k]; box.innerHTML = `<h5>${d[0]}</h5><p>${d[1]}</p>`; return; }
+    if (k === 'zeus') { box.innerHTML = `<h5>${esc(w.name)}</h5><p>تیزر برد کوتاه · یک شلیک · کشتن با یک ضربه (بدون توجه به زره) · فقط یک بار مصرف</p>`; return; }
+    if (w.nade) {
+      const fa = { he: 'انفجاری · تا ۹۸ آسیب در شعاع ۹ متر', flash: 'کور کردن دشمن در دید مستقیم', smoke: 'دیوار دود ۱۸ ثانیه‌ای', decoy: 'صدای شلیک جعلی ۱۵ ثانیه‌ای', molotov: 'آتش ۷ ثانیه‌ای · فقط T · دود خاموشش می‌کنه', incendiary: 'آتش ۷ ثانیه‌ای · فقط CT · دود خاموشش می‌کنه' }[k];
+      box.innerHTML = `<h5>${esc(w.name)}</h5><p>${fa}</p>`; return;
+    }
+    const acc = 1 - Math.min(1, (w.scoped && w.scope ? w.spread * 0.5 : w.spread) / 0.07);
+    box.innerHTML = `<h5>${esc(w.name)}${w.team ? ` <em>${w.team}</em>` : ''}</h5><div class="chips">${chip('Damage', w.pellets ? `${w.dmg}×${w.pellets}` : w.dmg)}${chip('Fire rate', w.rpm + ' rpm')}${chip('Accuracy', Math.round(acc * 100) + '%')}${chip('Armor pen.', Math.round(w.pen * 100) + '%')}${chip('Speed', Math.round((w.speed || 6) / 6.35 * 250) + ' u/s')}${chip('Ammo', w.mag + ' / ' + w.res)}${chip('Reward', '$' + w.reward)}</div>`;
   }
 }
