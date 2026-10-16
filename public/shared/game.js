@@ -1,7 +1,7 @@
 // Authoritative CS-style round engine. Runs on the Node server (online) or inside the browser (offline practice).
 import { TICK_RATE, PHYS, ROUND, ECON, BOT_NAMES, clamp, forward } from './constants.js';
-import { getMap, inRect, siteAt, calloutAt } from './maps.js';
-import { canOccupy, groundAt, rayWorld, rayPlayer, stepMove, hasLOS, heightAt, ceilAt } from './physics.js';
+import { getMap, instanceMap, inRect, siteAt, calloutAt } from './maps.js';
+import { canOccupy, groundAt, rayWorld, rayPlayer, stepMove, hasLOS, heightAt, ceilAt, traceBullet, updateDoors } from './physics.js';
 import { WEAPONS, WEAPON_KEYS, GEAR, defaultPistol, newWeapon, applyArmor, PART_MULT, NADES, NADE_LIMIT, newNades, nadeCount, firstNade, spreadDir } from './weapons.js';
 import { getNav } from './nav.js';
 import { rankForXp } from './ranks.js';
@@ -17,7 +17,7 @@ const newSell = () => ({ w: {}, g: newNades(), gear: {} });
 export class GameRoom {
   constructor(opts, out) {
     this.code = opts.code; this.title = String(opts.title || 'Dust II').slice(0, 24);
-    this.mapId = opts.map || 'dust2'; this.map = getMap(this.mapId); this.nav = getNav(this.map);
+    this.mapId = opts.map || 'dust2'; this.map = instanceMap(getMap(this.mapId)); this.nav = getNav(getMap(this.mapId));
     this.maxPlayers = clamp(opts.max | 0 || 10, 2, 16);
     this.botMode = opts.bots === 'none' ? 'none' : 'fill';
     this.difficulty = ['easy', 'normal', 'hard'].includes(opts.difficulty) ? opts.difficulty : 'normal';
@@ -252,27 +252,41 @@ export class GameRoom {
     p.shots++; p.lastShot = now; p.youDirty = true;
     const e = this.eye(p); if (!Array.isArray(o) || o.length !== 3 || !o.every(Number.isFinite) || Math.hypot(o[0] - e[0], o[1] - e[1], o[2] - e[2]) > 1.5) o = e;
     const fw = forward(p.yaw, p.pitch); if (fw[0] * d[0] + fw[1] * d[1] + fw[2] * d[2] < 0.9) d = fw; // reject wildly off-aim rays
-    const range = w.melee ? ((alt && w.altRange) || w.range) : (w.range || 220); const wall = rayWorld(this.map, o, d, range);
-    const rt = clamp(t || now, now - 350, now); let best = null;
-    for (const q of this.players.values()) {
-      if (q === p || !q.alive || q.team === p.team || q.team === 'SPEC') continue;
-      const pos = q.bot ? q : this.rewind(q, rt); const hit = rayPlayer(o, d, pos, best ? best.t : wall.t);
-      if (hit) best = { q, ...hit };
-    }
+    const range = w.melee ? ((alt && w.altRange) || w.range) : (w.range || 220);
+    const rt = clamp(t || now, now - 350, now);
     if (w.pellets > 1) { this.firePellets(p, o, d, rt, wk, w); }
     else {
-    const T = best ? best.t : wall.t; const end = [r2(o[0] + d[0] * T), r2(o[1] + d[1] * T), r2(o[2] + d[2] * T)];
-    this.broadcast('fx', { id: p.id, w: wk, o: o.map(r2), e: end, h: best ? 1 : wall.n ? 2 : 0, n: wall.n }, p.bot ? null : p.id);
+    const tr = this.trace(o, d, range, w), best = this.pickTarget(p, o, d, tr, rt);
+    const T = best ? best.t : tr.end.t; const end = [r2(o[0] + d[0] * T), r2(o[1] + d[1] * T), r2(o[2] + d[2] * T)];
+    const pe = tr.entries.filter((e) => e.t < T).map((e) => [...e.p.map(r2), ...e.n]);   // walls the bullet punched through (impact marks)
+    this.broadcast('fx', { id: p.id, w: wk, o: o.map(r2), e: end, h: best ? 1 : tr.end.n ? 2 : 0, n: tr.end.n, pe: pe.length ? pe : undefined, wb: best && best.wb ? 1 : undefined }, p.bot ? null : p.id);
     if (best) {
       const mult = w.melee ? (best.part === 'head' ? 1.4 : 1) : PART_MULT[best.part];
       const baseDmg = w.melee && alt && w.altDmg ? w.altDmg : w.dmg;
-      const dmg = baseDmg * mult * Math.pow(w.falloff, best.t / 12.7);
-      this.damage(best.q, p, dmg, best.part, wk);
+      const dmg = baseDmg * mult * Math.pow(w.falloff, best.t / 12.7) * best.mul;   // best.mul < 1 after a wallbang
+      this.damage(best.q, p, dmg, best.part, wk, best.wb);
     }
     }
     if (w.taser) { p.w[6] = null; p.active = this.bestSlot(p); p.drawEnd = Date.now() + 400; p.youDirty = true; return true; }
     if (p.bot && item.mag === 0 && !w.melee) this.reload(p);
     return true;
+  }
+  // Ray through the world with wallbang (knife and taser never punch through).
+  trace(o, d, range, w) {
+    if (w.melee || w.taser) { const r = rayWorld(this.map, o, d, range), seg = { t0: 0, t1: r.t, mul: 1 }; return { segs: [seg], entries: [], end: { t: r.t, n: r.n }, first: { t: r.t, n: r.n } }; }
+    return traceBullet(this.map, o, d, range, w.pen);
+  }
+  // Nearest enemy the bullet reaches through the open stretches of its path (a hit behind a wall keeps the reduced damage).
+  pickTarget(p, o, d, tr, rt) {
+    let best = null;
+    for (const q of this.players.values()) {
+      if (q === p || !q.alive || q.team === p.team || q.team === 'SPEC') continue;
+      const pos = q.bot ? q : this.rewind(q, rt), hit = rayPlayer(o, d, pos, best ? best.t : tr.end.t);
+      if (!hit) continue;
+      const sg = tr.segs.find((s) => hit.t >= s.t0 - 0.02 && hit.t <= s.t1 + 0.02);
+      if (sg) best = { q, ...hit, mul: sg.mul, wb: sg.t0 > 0 };
+    }
+    return best;
   }
   // Shotguns: every pellet is its own ray with its own spread. Damage is summed per victim/body-part so the
   // victim gets one hit/hurt event (and one armor calculation per part) instead of nine.
@@ -280,33 +294,29 @@ export class GameRoom {
     const rnd = Math.random, hits = new Map(); let first = true;
     for (let i = 0; i < w.pellets; i++) {
       const pd = spreadDir(d, w.spread * (i === 0 ? 0.35 : 1), rnd);
-      const wall = rayWorld(this.map, o, pd, 80); let best = null;
-      for (const q of this.players.values()) {
-        if (q === p || !q.alive || q.team === p.team || q.team === 'SPEC') continue;
-        const pos = q.bot ? q : this.rewind(q, rt); const hit = rayPlayer(o, pd, pos, best ? best.t : wall.t);
-        if (hit) best = { q, ...hit };
-      }
-      const T = best ? best.t : wall.t, end = [r2(o[0] + pd[0] * T), r2(o[1] + pd[1] * T), r2(o[2] + pd[2] * T)];
-      this.broadcast('fx', { id: p.id, w: wk, o: o.map(r2), e: end, h: best ? 1 : wall.n ? 2 : 0, n: wall.n, x: first ? 0 : 1 }, p.bot ? null : p.id); first = false;
+      const tr = this.trace(o, pd, 80, w), best = this.pickTarget(p, o, pd, tr, rt);
+      const T = best ? best.t : tr.end.t, end = [r2(o[0] + pd[0] * T), r2(o[1] + pd[1] * T), r2(o[2] + pd[2] * T)];
+      const pe = tr.entries.filter((e) => e.t < T).map((e) => [...e.p.map(r2), ...e.n]);
+      this.broadcast('fx', { id: p.id, w: wk, o: o.map(r2), e: end, h: best ? 1 : tr.end.n ? 2 : 0, n: tr.end.n, x: first ? 0 : 1, pe: pe.length ? pe : undefined, wb: best && best.wb ? 1 : undefined }, p.bot ? null : p.id); first = false;
       if (best) {
-        const dmg = w.dmg * PART_MULT[best.part] * Math.pow(w.falloff, best.t / 12.7), key = best.q.id + ':' + best.part;
-        const h = hits.get(key) || { q: best.q, part: best.part, dmg: 0 }; h.dmg += dmg; hits.set(key, h);
+        const dmg = w.dmg * PART_MULT[best.part] * Math.pow(w.falloff, best.t / 12.7) * best.mul, key = best.q.id + ':' + best.part;
+        const h = hits.get(key) || { q: best.q, part: best.part, dmg: 0, wb: false }; h.dmg += dmg; h.wb = h.wb || best.wb; hits.set(key, h);
       }
     }
     // Apply body hits first and head hits last so the kill-feed headshot flag reflects the finishing pellet.
     const order = [...hits.values()].sort((a, b) => (a.part === 'head') - (b.part === 'head'));
-    for (const h of order) if (h.q.alive) this.damage(h.q, p, h.dmg, h.part, wk);
+    for (const h of order) if (h.q.alive) this.damage(h.q, p, h.dmg, h.part, wk, h.wb);
   }
-  damage(v, a, dmg, part, wk) {
+  damage(v, a, dmg, part, wk, wb = false) {
     if (v.god) return;
     const r = applyArmor(dmg, WEAPONS[wk] || { pen: 0.5 }, part, v.armor, v.helmet);
     const hp = Math.min(v.hp, r.hp); v.hp -= hp; v.armor = Math.max(0, v.armor - r.armor); v.youDirty = true;
-    if (a) { v.dmgBy.set(a.id, (v.dmgBy.get(a.id) || 0) + hp); if (!(WEAPONS[wk] && WEAPONS[wk].fire)) this.send(a.id, 'hit', { v: v.id, dmg: hp, hs: part === 'head', kill: v.hp <= 0 }); }
+    if (a) { v.dmgBy.set(a.id, (v.dmgBy.get(a.id) || 0) + hp); if (!(WEAPONS[wk] && WEAPONS[wk].fire)) this.send(a.id, 'hit', { v: v.id, dmg: hp, hs: part === 'head', kill: v.hp <= 0, wb: wb || undefined }); }
     this.send(v.id, 'hurt', { from: a ? a.id : null, x: a ? a.x : v.x, z: a ? a.z : v.z, dmg: hp, hs: part === 'head' });
     if (v.ai && a) { v.ai.hurtBy = a.id; v.ai.hurtAt = Date.now(); }
-    if (v.hp <= 0) this.kill(v, a, wk, part === 'head');
+    if (v.hp <= 0) this.kill(v, a, wk, part === 'head', wb);
   }
-  kill(v, a, wk, hs) {
+  kill(v, a, wk, hs, wb = false) {
     if (!v.alive) return;
     v.alive = false; v.deadAt = Date.now(); v.d++; v.action = null; v.hp = 0;
     // Snap a player who dies mid-air onto the floor so the corpse does not freeze in a jump/fall pose.
@@ -321,7 +331,7 @@ export class GameRoom {
     for (const [id, dmg] of v.dmgBy) { if (a && id === a.id) continue; const q = this.players.get(id); if (q && q.team !== v.team && dmg >= 40) { q.a++; assist = assist || q.name; } }
     v.dmgBy.clear();
     this.dropAll(v); this.resetLoadout(v); v.youDirty = true; this.rosterDirty = true;
-    this.broadcast('kill', { k: a ? a.id : null, kn: a ? a.name : '', kt: a ? a.team : '', v: v.id, vn: v.name, vt: v.team, w: wk, hs: !!hs, as: assist });
+    this.broadcast('kill', { k: a ? a.id : null, kn: a ? a.name : '', kt: a ? a.team : '', v: v.id, vn: v.name, vt: v.team, w: wk, hs: !!hs, wb: wb || undefined, as: assist });
     if (!this.exploding) this.checkRoundEnd();
   }
   // ---------- items ----------
@@ -782,6 +792,7 @@ export class GameRoom {
   // ---------- main loop ----------
   tick() {
     const now = Date.now(); const dt = clamp((now - this.last) / 1000, 0.001, 0.1); this.last = now;
+    if (this.map.doors.length) updateDoors(this.map, [...this.players.values()].filter((q) => q.alive), dt);   // auto doors open for whoever is close
     for (const p of [...this.players.values()]) if (p.dc && now - p.dc > 30000) this.removePlayer(p.id);
     if (!this.players.size) return;
     if (this.phase === 'warmup') {

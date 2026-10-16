@@ -300,6 +300,8 @@ export const MAP_DEFS = { dust2: DUST2, mirage: MIRAGE, inferno: INFERNO, wareho
 export const MAP_LIST = Object.values(MAP_DEFS).map((d) => ({ id: d.id, name: d.name }));
 export const mapName = (id) => (MAP_DEFS[id] ? MAP_DEFS[id].name : 'Dust II');
 
+// getMap() returns one cached map shared by every room. A room gets its own light copy so each room has its own door states.
+export function instanceMap(m) { const c = Object.create(m); c.doors = (m.doors || []).map((d) => ({ ...d })); return c; }
 const cache = new Map();
 export function getMap(id) {
   if (!MAP_DEFS[id]) id = 'dust2';
@@ -324,6 +326,41 @@ export function registerCustomMaps(defs) {
     } catch (e) { /* ignore broken custom map */ }
   }
   return changed;
+}
+
+// Door leaves (def.doors = [x0,z0,x1,z1,h] thin slabs, meters) become real objects.
+//  kind 'static': the leaf sits against a wall (an open door): solid for players and bullets, never moves.
+//  kind 'auto'  : the leaf stands across a passage: it is shut (blocks bullets/sight, wallbangable) and swings
+//                 open on its own while somebody is close, so nobody ever walks through a closed door.
+const DOOR_T = 0.12;
+function makeDoors(m, def) {
+  const solid = (x, z) => { const cx = Math.floor(x), cz = Math.floor(z); return cx < 0 || cz < 0 || cx >= m.W || cz >= m.H || m.heights[cz * m.W + cx] >= WALL; };
+  const flo = (x, z) => { const cx = Math.floor(x), cz = Math.floor(z); return cx < 0 || cz < 0 || cx >= m.W || cz >= m.H ? WALL : m.floor[cz * m.W + cx]; };
+  return (def.doors || []).map(([x0, z0, x1, z1, h], id) => {
+    const alongZ = (x1 - x0) < (z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, len = alongZ ? z1 - z0 : x1 - x0;
+    const pa = alongZ ? [cx - 0.5, cz] : [cx, cz - 0.5], pb = alongZ ? [cx + 0.5, cz] : [cx, cz + 0.5];
+    const wa = solid(...pa), wb = solid(...pb);
+    const fl = [flo(...pa), flo(...pb)].filter((v) => v < WALL), base = fl.length ? Math.min(...fl) : 0;
+    const d = { id, kind: wa || wb ? 'static' : 'auto', axis: alongZ ? 'z' : 'x', cx, cz, len, h, thick: DOOR_T, y0: base, y1: base + h, open: 0, solid: true, reach: len / 2 + 1.6,
+      x0: alongZ ? cx - DOOR_T / 2 : x0, x1: alongZ ? cx + DOOR_T / 2 : x1, z0: alongZ ? z0 : cz - DOOR_T / 2, z1: alongZ ? z1 : cz + DOOR_T / 2 };
+    if (d.kind === 'auto') {
+      // choose the hinge end + swing side so the open leaf ends up lying flat against a wall
+      let best = null;
+      for (const end of [0, 1]) for (const dir of [1, -1]) {
+        const u = end ? -1 : 1;                                                   // closed leaf runs from the hinge in direction u
+        const hx = alongZ ? cx : (end ? x1 : x0), hz = alongZ ? (end ? z1 : z0) : cz;
+        const mx = alongZ ? hx + dir * len / 2 : hx, mz = alongZ ? hz : hz + dir * len / 2;   // middle of the open leaf
+        const wx = alongZ ? mx : hx - u * 0.5, wz = alongZ ? hz - u * 0.5 : mz;                // cell behind the hinge side (should be wall)
+        const fx = alongZ ? mx : hx + u * 0.5, fz = alongZ ? hz + u * 0.5 : mz;                // cell on the other side (should be open)
+        const score = (solid(wx, wz) ? 2 : 0) + (solid(fx, fz) ? 0 : 1);
+        if (!best || score > best.score) best = { score, hx, hz, dir, u };
+      }
+      d.hinge = { x: best.hx, z: best.hz }; d.dir = best.dir; d.u = best.u;
+      // rotation about +Y turns (ux,uz) into (uz,-ux): pick the sign that swings the leaf toward `dir`
+      d.swing = alongZ ? best.u * best.dir : -best.u * best.dir;
+    }
+    return d;
+  });
 }
 
 export function buildMap(def) {
@@ -355,6 +392,7 @@ export function buildMap(def) {
     each(x, z, x + w, z + d, (i) => { heights[i] = base + h; mat[i] = MAT.CRATE; rampIdx[i] = -1; });
   }
   const m = { id: def.id, name: def.name, def, W, H, heights, floor, ceil, mat, ramps, rampIdx, crates, theme: def.theme };
+  m.doors = makeDoors(m, def);
   m.spawnPoints = {};
   for (const t of ['T', 'CT']) m.spawnPoints[t] = def.spawns[t].map(([x, z]) => ({ x: x + 0.5, z: z + 0.5, y: floor[z * W + x], yaw: def.yaw[t] }));
   return m;

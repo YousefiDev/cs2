@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { PHYS, ROUND, clamp, forward, angDiff } from '/shared/constants.js';
 import { calloutAt, inRect } from '/shared/maps.js';
-import { stepMove, rayWorld, rayPlayer, hasLOS } from '/shared/physics.js';
+import { stepMove, rayWorld, rayPlayer, hasLOS, traceBullet, updateDoors } from '/shared/physics.js';
 import { WEAPONS, WEAPON_KEYS, NADES, inaccuracy, spreadDir } from '/shared/weapons.js';
 import { makeSoldier, setRigWeapon, animateRig, makeGun, makeViewArms } from './models.js';
 import * as TX from './textures.js';
@@ -239,6 +239,7 @@ export class Game {
     this.sound.nearMiss(pos, { x: f.e[0], y: f.e[1], z: f.e[2] });
     if (r && r.rig.gun) { const mz = r.rig.gun.localToWorld(r.rig.gun.userData.muzzle.clone()); this.flashAt(mz, true); this.tracer(mz, new THREE.Vector3(...f.e)); }
     else this.tracer(pos, new THREE.Vector3(...f.e));
+    if (f.pe) for (const e of f.pe) this.impact(new THREE.Vector3(e[0], e[1], e[2]), new THREE.Vector3(e[3], e[4], e[5]), false);
     if (f.h === 2 && f.n) this.impact(new THREE.Vector3(...f.e), new THREE.Vector3(...f.n), false);
     else if (f.h === 1) this.blood(new THREE.Vector3(...f.e));
   }
@@ -407,16 +408,19 @@ export class Game {
     this.net.emit('shot', { o: eye.map((v) => +v.toFixed(3)), d: dir.map((v) => +v.toFixed(5)), t: Math.round(this.serverNow() - INTERP), w: it.k, alt: !!alt });
     this.sound.shot(it.k, null);
     // local effects (prediction only, damage is server-side)
-    const range = w.melee ? ((alt && w.altRange) || w.range) : (w.range || 220); const wall = rayWorld(this.map, eye, dir, range); let best = null;
-    for (const r of this.remotes.values()) { if (!r.alive || r.team === this.team) continue; const h = rayPlayer(eye, dir, { x: r.x, y: r.y, z: r.z, crouch: !!(r.fl & 2) }, best ? best.t : wall.t); if (h) best = h; }
+    const range = w.melee ? ((alt && w.altRange) || w.range) : (w.range || 220);
+    // same trace as the server: bullets punch through thin walls/doors/crates (wallbang), knife/taser don't
+    const trc = (dd, rng) => { if (w.melee || w.taser) { const rw = rayWorld(this.map, eye, dd, rng); return { segs: [{ t0: 0, t1: rw.t }], entries: [], end: { t: rw.t, n: rw.n } }; } return traceBullet(this.map, eye, dd, rng, w.pen); };
+    const pick = (dd, tr) => { let b = null; for (const r of this.remotes.values()) { if (!r.alive || r.team === this.team) continue; const h = rayPlayer(eye, dd, { x: r.x, y: r.y, z: r.z, crouch: !!(r.fl & 2) }, b ? b.t : tr.end.t); if (h && tr.segs.some((s) => h.t >= s.t0 - 0.02 && h.t <= s.t1 + 0.02)) b = h; } return b; };
+    const tr0 = trc(dir, range), wall = tr0.end; let best = pick(dir, tr0);
     const T = best ? best.t : wall.t, end = new THREE.Vector3(eye[0] + dir[0] * T, eye[1] + dir[1] * T, eye[2] + dir[2] * T);
     if (w.pellets > 1) {
       const mz0 = this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
       for (let i = 0; i < w.pellets; i++) {
-        const pd = spreadDir(dir, w.spread, Math.random), pw = rayWorld(this.map, eye, pd, 80); let pb = null;
-        for (const r of this.remotes.values()) { if (!r.alive || r.team === this.team) continue; const h = rayPlayer(eye, pd, { x: r.x, y: r.y, z: r.z, crouch: !!(r.fl & 2) }, pb ? pb.t : pw.t); if (h) pb = h; }
+        const pd = spreadDir(dir, w.spread, Math.random), ptr = trc(pd, 80), pw = ptr.end; let pb = pick(pd, ptr);
         const pT = pb ? pb.t : pw.t, pe = new THREE.Vector3(eye[0] + pd[0] * pT, eye[1] + pd[1] * pT, eye[2] + pd[2] * pT);
         if (i < 5) this.tracer(mz0, pe); if (pb) this.blood(pe); else if (pw.n) this.impact(pe, new THREE.Vector3(...pw.n), true);
+        if (i === 0) for (const en of ptr.entries) if (en.t < pT) this.impact(new THREE.Vector3(...en.p), new THREE.Vector3(...en.n), true);
       }
       this.flashAt(this.camera.position, false); this.vmFlash = now + 45; this.vmKick = 1.6;
       this.punchP += w.kick * 1.4; this.punchY += (Math.random() - 0.5) * w.side * 2; return;
@@ -425,6 +429,7 @@ export class Game {
     const mz = this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
     if (this.shotsFired % 2 === 1 || !w.auto) this.tracer(mz, end);
     this.flashAt(this.camera.position, false); this.vmFlash = now + 45; this.vmKick = 1;
+    for (const en of tr0.entries) if (en.t < T) this.impact(new THREE.Vector3(...en.p), new THREE.Vector3(...en.n), true);   // holes where the bullet went through a wall
     if (best) this.blood(end); else if (wall.n) this.impact(end, new THREE.Vector3(...wall.n), true);
     const n = Math.min(this.shotsFired, 12);
     this.punchP += w.kick * (1 + n * 0.05); this.punchY += (Math.random() - 0.5) * w.side * 2 + (n > 4 ? Math.sin(n * 0.8) * w.side * 1.6 : 0);
@@ -674,6 +679,7 @@ export class Game {
     // server keeps getting our state, so everyone else sees us fall/stand normally instead of frozen mid-air.
     const now = performance.now(), snow = this.serverNow();
     if (this.alive) this.updateLocal(dt, now); else if (this.mouseL && this.touchFire) this.specNext(1);
+    if (this.map.doors && this.map.doors.length) { const ac = []; if (this.alive && this.s) ac.push(this.s); for (const r of this.remotes.values()) if (r.alive) ac.push(r); updateDoors(this.map, ac, dt); }
     this.updateRemotes(dt, snow); this.updateNades(dt); this.updateCamera(dt, now); this.updateViewModel(dt, now); this.updateEffects(dt);
     if (this.touch) { const tc = $('t-crouch'); if (tc) tc.classList.toggle('on', !!this.touchCrouch); }
     this.updateHUD(now);

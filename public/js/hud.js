@@ -88,7 +88,7 @@ export class HUD {
   }
   kill(e, meId) {
     const div = document.createElement('div'); div.className = 'kf' + (e.k === meId || e.v === meId ? ' me' : '');
-    div.innerHTML = (e.kn ? `<span class="${e.kt}">${esc(e.kn)}</span>${e.as ? `<span class="as">+ ${esc(e.as)}</span>` : ''}` : '') + `<span class="w">${esc(e.w === 'c4' ? 'C4' : (WEAPONS[e.w] || {}).name || e.w)}</span>${e.hs ? '<span class="hs">◉ HS</span>' : ''}<span class="${e.vt}">${esc(e.vn)}</span>`;
+    div.innerHTML = (e.kn ? `<span class="${e.kt}">${esc(e.kn)}</span>${e.as ? `<span class="as">+ ${esc(e.as)}</span>` : ''}` : '') + `<span class="w">${esc(e.w === 'c4' ? 'C4' : (WEAPONS[e.w] || {}).name || e.w)}</span>${e.wb ? '<span class="hs">▤ WB</span>' : ''}${e.hs ? '<span class="hs">◉ HS</span>' : ''}<span class="${e.vt}">${esc(e.vn)}</span>`;
     const kf = $('killfeed'); kf.appendChild(div); while (kf.children.length > 6) kf.firstChild.remove();
     setTimeout(() => div.remove(), 7000);
   }

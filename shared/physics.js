@@ -16,7 +16,18 @@ export function ceilAt(m, x, z) {
 const PTS = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7071, 0.7071], [-0.7071, 0.7071], [0.7071, -0.7071], [-0.7071, -0.7071]];
 export function groundAt(m, x, z, r = PHYS.radius) { let h = -1e9; for (const [a, b] of PTS) { const v = heightAt(m, x + a * r, z + b * r); if (v > h) h = v; } return h; }
 function ceilMin(m, x, z, r) { let c = 1e9; for (const [a, b] of PTS) { const v = ceilAt(m, x + a * r, z + b * r); if (v < c) c = v; } return c; }
+// Door leaves that stay in place (kind 'static') are solid for characters: circle vs thin box.
+function doorBlocks(m, x, z, feet, height, r) {
+  const ds = m.doors; if (!ds) return false;
+  for (const d of ds) {
+    if (d.kind !== 'static' || feet + height <= d.y0 || feet >= d.y1) continue;
+    const cx = x < d.x0 ? d.x0 : x > d.x1 ? d.x1 : x, cz = z < d.z0 ? d.z0 : z > d.z1 ? d.z1 : z;
+    if ((x - cx) * (x - cx) + (z - cz) * (z - cz) < r * r) return true;
+  }
+  return false;
+}
 export function canOccupy(m, x, z, feet, height, r = PHYS.radius) {
+  if (doorBlocks(m, x, z, feet, height, r)) return false;
   for (const [a, b] of PTS) {
     const px = x + a * r, pz = z + b * r;
     if (heightAt(m, px, pz) > feet + PHYS.step) return false;
@@ -62,25 +73,110 @@ function cellTop(m, cx, cz) {
   const i = cz * m.W + cx, h = m.heights[i];
   return h >= WALL ? WALL_TOP : h;
 }
-// Ray vs world. Returns {t, n:[x,y,z]} where t = maxDist if nothing hit.
-export function rayWorld(m, o, d, maxDist) {
+// Ray vs the heightfield grid. Returns {t, n:[x,y,z]} where t = maxDist if nothing hit.
+// Ramp cells use the real sloped surface (the old code used the ramp's highest point for the whole cell, which
+// made bullets hit an invisible flat plane above ramps).
+function rayGrid(m, o, d, maxDist) {
   let cx = Math.floor(o[0]), cz = Math.floor(o[2]);
   const sx = d[0] > 0 ? 1 : -1, sz = d[2] > 0 ? 1 : -1;
   const tdx = d[0] !== 0 ? Math.abs(1 / d[0]) : Infinity, tdz = d[2] !== 0 ? Math.abs(1 / d[2]) : Infinity;
   let tmx = d[0] !== 0 ? ((cx + (d[0] > 0 ? 1 : 0)) - o[0]) / d[0] : Infinity;
   let tmz = d[2] !== 0 ? ((cz + (d[2] > 0 ? 1 : 0)) - o[2]) / d[2] : Infinity;
   let t = 0, axis = -1;
+  const side = () => (axis === 0 ? [-sx, 0, 0] : [0, 0, -sz]);
   for (let it = 0; it < 512; it++) {
-    if (cx < 0 || cz < 0 || cx >= m.W || cz >= m.H) return { t, n: axis === 0 ? [-sx, 0, 0] : [0, 0, -sz] };
-    const tn = Math.min(tmx, tmz, maxDist), top = cellTop(m, cx, cz), cl = m.ceil[cz * m.W + cx];
+    if (cx < 0 || cz < 0 || cx >= m.W || cz >= m.H) return { t, n: side() };
+    const i = cz * m.W + cx, tn = Math.min(tmx, tmz, maxDist), cl = m.ceil[i], ri = m.rampIdx[i];
     const y0 = o[1] + d[1] * t, y1 = o[1] + d[1] * tn;
-    if (t > 0 && (y0 < top - 1e-4 || y0 > cl + 1e-4)) return { t, n: axis === 0 ? [-sx, 0, 0] : [0, 0, -sz] };
-    if (y1 < top && d[1] < 0) { const th = (top - o[1]) / d[1]; if (th >= t - 1e-6) return { t: Math.max(t, th), n: [0, 1, 0] }; }
+    if (ri >= 0) {
+      const R = m.ramps[ri], ax = R.axis === 'x', c0 = ax ? R.x0 : R.z0, c1 = ax ? R.x1 : R.z1, k = (R.h1 - R.h0) / (c1 - c0);
+      const oc = ax ? o[0] : o[2], dc = ax ? d[0] : d[2];
+      const top0 = R.h0 + k * (clamp(oc + dc * t, c0, c1) - c0), top1 = R.h0 + k * (clamp(oc + dc * tn, c0, c1) - c0);
+      if (t > 0 && (y0 < top0 - 1e-4 || y0 > cl + 1e-4)) return { t, n: side() };                 // ran into the side of the ramp block
+      const f0 = y0 - top0, f1 = y1 - top1;
+      if (f1 < 0 && f0 >= -1e-4) {                                                                  // crosses the sloped surface inside this cell
+        const th = Math.min(tn, t + (f0 / (f0 - f1)) * (tn - t)), l = Math.hypot(k, 1);
+        return { t: Math.max(t, th), n: ax ? [-k / l, 1 / l, 0] : [0, 1 / l, -k / l] };
+      }
+    } else {
+      const top = cellTop(m, cx, cz);
+      if (t > 0 && (y0 < top - 1e-4 || y0 > cl + 1e-4)) return { t, n: side() };
+      if (y1 < top && d[1] < 0) { const th = (top - o[1]) / d[1]; if (th >= t - 1e-6) return { t: Math.max(t, th), n: [0, 1, 0] }; }
+    }
     if (y1 > cl && d[1] > 0) { const th = (cl - o[1]) / d[1]; if (th >= t - 1e-6) return { t: Math.max(t, th), n: [0, -1, 0] }; }
     if (tn >= maxDist) return { t: maxDist, n: null };
     if (tmx < tmz) { t = tmx; tmx += tdx; cx += sx; axis = 0; } else { t = tmz; tmz += tdz; cz += sz; axis = 2; }
   }
   return { t: maxDist, n: null };
+}
+// Ray vs door leaves that are currently shut (static leaves and closed auto doors). Slab test on a thin box.
+export function rayDoors(m, o, d, maxT) {
+  let best = null; const ds = m.doors; if (!ds) return null;
+  for (const dr of ds) {
+    if (!dr.solid) continue;
+    const lo = [dr.x0, dr.y0, dr.z0], hi = [dr.x1, dr.y1, dr.z1]; let t0 = 0, t1 = maxT, na = -1, ns = 0, miss = false;
+    for (let a = 0; a < 3; a++) {
+      if (Math.abs(d[a]) < 1e-9) { if (o[a] < lo[a] || o[a] > hi[a]) { miss = true; break; } continue; }
+      let ta = (lo[a] - o[a]) / d[a], tb = (hi[a] - o[a]) / d[a], sg = -1;
+      if (ta > tb) { const q = ta; ta = tb; tb = q; sg = 1; }
+      if (ta > t0) { t0 = ta; na = a; ns = sg; }
+      if (tb < t1) t1 = tb;
+      if (t0 > t1) { miss = true; break; }
+    }
+    if (miss || na < 0 || t0 > maxT) continue;      // na < 0: the ray starts inside the leaf, ignore it
+    if (!best || t0 < best.t) { const n = [0, 0, 0]; n[na] = ns; best = { t: t0, tExit: t1, n, door: dr }; }
+  }
+  return best;
+}
+export function rayWorld(m, o, d, maxDist) {
+  const g = rayGrid(m, o, d, maxDist), dh = m.doors && m.doors.length ? rayDoors(m, o, d, g.t) : null;
+  return dh && dh.t < g.t ? { t: dh.t, n: dh.n, door: dh } : g;
+}
+// ---- bullet penetration (wallbang) ----
+// Max thickness (m) of solid a bullet can punch through; scales with the weapon's `pen`.
+export const penDist = (pen) => 0.35 + (pen || 0);   // AK 1.1 m, M4 1.05 m, Glock 0.8 m, AWP 1.3 m: a 1 m crate / 1-cell wall can be shot through, thick walls cannot
+function solidPoint(m, x, y, z) {
+  if (x < 0 || z < 0 || x >= m.W || z >= m.H) return true;
+  return y < heightAt(m, x, z) - 1e-4 || y > ceilAt(m, x, z) + 1e-4;
+}
+// Traces a bullet through up to 2 walls/doors/crates. Returns
+//   segs:    [{t0,t1,mul}] stretches of open air the bullet flies through (mul = damage left after each punch-through)
+//   entries: [{t,p,n}] where it punched into a wall (for impact marks)
+//   end:     {t,n} where it finally stopped (n null = max range)
+//   first:   {t,n} the first thing it hit
+export function traceBullet(m, o, d, maxDist, pen = 0) {
+  const segs = [], entries = [], thickMax = penDist(pen); let base = 0, mul = 1, first = null, end = null;
+  for (let pass = 0; pass < 3; pass++) {
+    const from = [o[0] + d[0] * base, o[1] + d[1] * base, o[2] + d[2] * base];
+    const w = rayWorld(m, from, d, maxDist - base), tEnd = base + w.t;
+    segs.push({ t0: base, t1: tEnd, mul });
+    if (!first) first = { t: tEnd, n: w.n };
+    end = { t: tEnd, n: w.n };
+    if (!w.n || pass === 2 || w.n[1] !== 0 || tEnd >= maxDist - 0.1) break;            // range / floor / ceiling: no punch-through
+    let thick = -1;
+    if (w.door) thick = w.door.tExit - w.t + 0.01;
+    else for (let s = 0.04; s <= thickMax + 1e-6; s += 0.04) {
+      const px = from[0] + d[0] * (w.t + s), py = from[1] + d[1] * (w.t + s), pz = from[2] + d[2] * (w.t + s);
+      if (!solidPoint(m, px, py, pz)) { thick = s; break; }
+    }
+    if (thick < 0 || thick > thickMax) break;                                            // too thick for this weapon
+    entries.push({ t: tEnd, p: [o[0] + d[0] * tEnd, o[1] + d[1] * tEnd, o[2] + d[2] * tEnd], n: w.n });
+    mul = Math.max(0.25, mul * 0.9 * (1 - 0.45 * (thick / thickMax)));
+    base = tEnd + thick;
+    if (base >= maxDist - 0.1) break;
+  }
+  return { segs, entries, end, first };
+}
+// ---- auto doors (a closed door across a passage swings open when somebody is close) ----
+export function updateDoors(m, actors, dt) {
+  const ds = m.doors; if (!ds) return;
+  for (const dr of ds) {
+    if (dr.kind !== 'auto') continue;
+    let near = false;
+    for (const a of actors) if (Math.abs(a.y - dr.y0) < 2.6 && Math.hypot(a.x - dr.cx, a.z - dr.cz) < dr.reach) { near = true; break; }
+    dr.open = clamp(dr.open + clamp((near ? 1 : 0) - dr.open, -dt * 3, dt * 4), 0, 1);
+    dr.solid = dr.open < 0.6;
+  }
 }
 export function hasLOS(m, a, b) {
   const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(d[0], d[1], d[2]);

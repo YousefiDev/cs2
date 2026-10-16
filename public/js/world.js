@@ -204,11 +204,16 @@ export function buildWorld(scene, m, opts = {}) {
       sh.rotation.x = -Math.PI / 2; sh.position.set(c.x + c.w / 2, c.base + 0.012, c.z + c.d / 2); sh.renderOrder = 1; root.add(sh);
     }
   }
-  // Iconic blue doors
-  for (const [x0, z0, x1, z1, h] of m.def.doors || []) {
-    const fx = x1 - x0 < 0.5, base = Math.min(heightAt(m, x0 + (fx ? -0.5 : 0.5), z0 + (fx ? 0.5 : -0.5)), heightAt(m, x0 + (fx ? 0.5 : 0.5), z0 + (fx ? 0.5 : 0.5)));
-    const b = new THREE.Mesh(new THREE.BoxGeometry(fx ? 0.1 : x1 - x0, h, fx ? z1 - z0 : 0.1), mats.door);
-    b.position.set((x0 + x1) / 2, Math.max(0, base) + h / 2 - 0.05, (z0 + z1) / 2); b.castShadow = true; b.receiveShadow = true; root.add(b);
+  // Blue doors (leaf data + states come from the shared map, see makeDoors): a leaf against a wall stays put, a door
+  // standing across a passage swings open on its own while somebody is close (same rule as the server).
+  const doorMeshes = [];
+  for (const d of m.doors || []) {
+    const along = d.axis === 'z';
+    const b = new THREE.Mesh(new THREE.BoxGeometry(along ? d.thick : d.len, d.h, along ? d.len : d.thick), mats.door); b.castShadow = true; b.receiveShadow = true;
+    if (d.kind === 'auto') {
+      const pivot = new THREE.Group(); pivot.position.set(d.hinge.x, d.y0 + d.h / 2, d.hinge.z);
+      b.position.set(along ? 0 : d.u * d.len / 2, 0, along ? d.u * d.len / 2 : 0); pivot.add(b); root.add(pivot); doorMeshes.push({ d, pivot });
+    } else { b.position.set((d.x0 + d.x1) / 2, d.y0 + d.h / 2, (d.z0 + d.z1) / 2); root.add(b); }
   }
   // Bombsite graffiti
   for (const [k, r] of Object.entries(m.def.sites)) {
@@ -285,6 +290,7 @@ export function buildWorld(scene, m, opts = {}) {
   let t = 0;
   const _c = new THREE.Vector3();
   function update(dt, cam) {
+    for (const dm of doorMeshes) { const o = dm.d.open; dm.pivot.rotation.y = dm.d.swing * (o * o * (3 - 2 * o)) * Math.PI * 0.49; }
     t += dt; skyMat.uniforms.time.value = t;
     if (sun.castShadow && cam) {
       // Shadow frustum follows the camera, snapped to shadow texels so edges don't shimmer.
