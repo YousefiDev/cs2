@@ -537,6 +537,8 @@ export class GameRoom {
   tickFires(now) {
     let changed = false; const keep = [];
     for (const f of this.fires) {
+      // Smoke puts fire out in either order: a molotov that lands inside a live smoke is extinguished too.
+      if (this.smokes.length && this.smokes.some((s) => now < s.end && Math.hypot(f.x - s.x, f.z - s.z) <= s.r * 0.85 + f.r * 0.25)) f.end = 0;
       if (now >= f.end) { changed = true; continue; }
       keep.push(f);
       if (now < f.next) continue; f.next = now + 250;
