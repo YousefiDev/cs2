@@ -1,6 +1,6 @@
-const CACHE = 'cs-dust-online-v14-soundmap';
+const CACHE = 'cs-dust-online-v15-mobile-hud';
 const CORE = [
-  '/', '/manifest.webmanifest', '/css/style.css',
+  '/', '/manifest.webmanifest', '/css/style.css', '/css/mobile.css',
   '/js/main.js', '/js/game.js', '/js/hud.js', '/js/models.js',
   '/js/audio.js', '/js/soundmap.js', '/js/lobby.js', '/js/net.js', '/js/textures.js', '/js/world.js',
   '/shared/constants.js', '/shared/core.js', '/shared/game.js',

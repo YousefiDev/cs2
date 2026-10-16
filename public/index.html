@@ -12,6 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Libre+Franklin:wght@500;700;800;900&family=Martian+Mono:wght@400;600;800&family=Vazirmatn:wght@400;600;800&display=swap" media="print" onload="this.media='all'" />
 <link rel="stylesheet" href="/css/style.css" />
+<link rel="stylesheet" href="/css/mobile.css" />
 <script type="importmap">{ "imports": { "three": "/vendor/three.module.min.js" } }</script>
 </head>
 <body>
@@ -187,23 +188,18 @@
 <section id="touch" hidden dir="ltr">
   <div id="t-look"></div>
   <div id="t-stick" class="tc"><i></i></div>
-  <button id="t-fire" class="tb big tc knife-primary">LMB</button>
-  <button id="t-fire2" class="tb big tc knife-secondary">RMB</button>
-  <button id="t-jump" class="tb tc">JUMP</button>
-  <button id="t-crouch" class="tb tc">DUCK</button>
-  <button id="t-reload" class="tb tc">R</button>
-  <button id="t-use" class="tb tc">E</button>
-  <button id="t-scope" class="tb tc">◎</button>
-  <button id="t-nade" class="tb tc">NADE</button>
-  <button id="t-more" class="tb tc" aria-label="ابزارهای بیشتر">•••</button>
-  <button id="t-buy" class="tb tc" aria-label="خرید">$</button>
-  <button id="t-score" class="tb tc" aria-label="جدول امتیاز">☰</button>
-  <button id="t-chat" class="tb tc" aria-label="چت">•••</button>
-  <div id="t-utility" class="t-utility" hidden>
-    <button id="t-next" class="tb tc" aria-label="تعویض اسلحه">⇄</button>
-    <button id="t-drop" class="tb tc" aria-label="انداختن">↓</button>
-  </div>
-  <button id="t-pause" class="tb tc pause-touch" aria-label="منوی توقف">Ⅱ</button>
+  <div id="t-slots" class="tc"></div>
+  <button id="t-fire" class="tb tc" aria-label="Fire"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/></svg></button>
+  <button id="t-fire2" class="tb tc" aria-label="Knife alt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19L18 5M10 20.5L20.5 8"/></svg></button>
+  <button id="t-jump" class="tb tc" aria-label="Jump"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 13l6-6 6 6M6 19l6-6 6 6"/></svg></button>
+  <button id="t-crouch" class="tb tc" aria-label="Crouch"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 8l6 6 6-6"/><path d="M7 19h10"/></svg></button>
+  <button id="t-scope" class="tb tc" aria-label="Scope"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/></svg></button>
+  <button id="t-reload" class="tb tc" aria-label="Reload"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 0-2.4 5.7"/><path d="M20 4.5V12h-7.5"/></svg></button>
+  <button id="t-use" class="tb tc" aria-label="Use"><span>E</span></button>
+  <button id="t-score" class="tb tc" aria-label="Scoreboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
+  <button id="t-buy" class="tb tc" aria-label="Buy"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M3 4h3l2.4 10.5h9.6L20 7H7"/></svg></button>
+  <button id="t-chat" class="tb tc" aria-label="Chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H10l-4.5 4v-4H4z"/></svg></button>
+  <button id="t-pause" class="tb tc" aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5v13M15 5.5v13"/></svg></button>
 </section>
 
 <!-- ================= UI EDITOR ================= -->

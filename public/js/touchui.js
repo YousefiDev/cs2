@@ -2,42 +2,49 @@
 // Layout is stored as viewport fractions so it survives rotation and different phones.
 const $ = (id) => document.getElementById(id);
 
+// Bump LAYOUT_V when the default layout is redesigned: older saved layouts are then replaced by the new defaults.
+const LAYOUT_V = 3;
 export const CONTROLS = [
-  { id: 't-stick', name: 'جوی‌استیک حرکت', x: 0.14, y: 0.76 },
-  { id: 't-fire', name: 'شلیک', x: 0.88, y: 0.77 },
-  { id: 't-fire2', name: 'شلیک دوم / چاقو', x: 0.72, y: 0.84 },
-  { id: 't-jump', name: 'پرش', x: 0.94, y: 0.56 },
-  { id: 't-crouch', name: 'نشستن', x: 0.84, y: 0.89 },
-  { id: 't-scope', name: 'اسکوپ', x: 0.74, y: 0.66 },
-  { id: 't-reload', name: 'ریلود', x: 0.64, y: 0.84 },
-  { id: 't-use', name: 'عملیات / استفاده', x: 0.57, y: 0.73 },
-  { id: 't-next', name: 'تعویض اسلحه', x: 0.52, y: 0.90 },
-  { id: 't-nade', name: 'نارنجک', x: 0.46, y: 0.76 },
-  { id: 't-drop', name: 'انداختن', x: 0.45, y: 0.90 },
-  { id: 't-buy', name: 'خرید', x: 0.17, y: 0.34 },
-  { id: 't-score', name: 'جدول امتیاز', x: 0.17, y: 0.23 },
-  { id: 't-chat', name: 'چت', x: 0.34, y: 0.90 },
-  { id: 't-pause', name: 'منو', x: 0.06, y: 0.08 },
-  { id: 't-more', name: 'ابزارهای بیشتر', x: 0.30, y: 0.90 },
+  { id: 't-stick', name: 'جوی‌استیک حرکت', x: 0.135, y: 0.74 },
+  { id: 't-fire', name: 'شلیک', x: 0.89, y: 0.70 },
+  { id: 't-fire2', name: 'ضربهٔ دوم چاقو', x: 0.76, y: 0.88 },
+  { id: 't-jump', name: 'پرش', x: 0.93, y: 0.44 },
+  { id: 't-crouch', name: 'نشستن', x: 0.89, y: 0.90 },
+  { id: 't-scope', name: 'اسکوپ', x: 0.79, y: 0.50 },
+  { id: 't-reload', name: 'ریلود', x: 0.77, y: 0.70 },
+  { id: 't-use', name: 'کاشت / خنثی‌سازی بمب', x: 0.67, y: 0.70 },
+  { id: 't-slots', name: 'نوار سلاح‌ها (لمس: انتخاب · نگه‌داشتن: انداختن)', x: 0.50, y: 0.79 },
+  { id: 't-score', name: 'جدول امتیاز', x: 0.795, y: 0.09 },
+  { id: 't-buy', name: 'خرید', x: 0.855, y: 0.09 },
+  { id: 't-chat', name: 'چت', x: 0.915, y: 0.09 },
+  { id: 't-pause', name: 'منو', x: 0.972, y: 0.09 },
 ];
 const DEF = Object.fromEntries(CONTROLS.map((c) => [c.id, { x: c.x, y: c.y, s: 1, o: 0.9, h: !!c.hidden }]));
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 export function normalizeLayout(raw) {
-  const out = {};
+  const fresh = !raw || raw._v !== LAYOUT_V, out = { _v: LAYOUT_V };
   for (const c of CONTROLS) {
-    const d = DEF[c.id], v = raw && typeof raw[c.id] === 'object' ? raw[c.id] : {};
-    // Old builds stored CSS strings ({l:'12px',t:'40px'}); those are discarded in favour of the new format.
+    const d = DEF[c.id], v = !fresh && typeof raw[c.id] === 'object' && raw[c.id] ? raw[c.id] : {};
     const ok = Number.isFinite(v.x) && Number.isFinite(v.y);
     out[c.id] = { x: ok ? clamp(v.x, 0.02, 0.98) : d.x, y: ok ? clamp(v.y, 0.03, 0.97) : d.y, s: clamp(Number(v.s) || d.s, 0.6, 1.8), o: clamp(Number(v.o) || d.o, 0.2, 1), h: typeof v.h === 'boolean' ? v.h : d.h };
   }
   return out;
 }
 
+// Controls are placed as fractions of the SAFE area (so nothing hides under a notch or the home bar).
+let probe = null;
+export function safeArea() {
+  if (!probe) { probe = document.createElement('div'); probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:var(--st,0px) var(--sr,0px) var(--sb,0px) var(--sl,0px)'; document.body.appendChild(probe); }
+  const c = getComputedStyle(probe), l = parseFloat(c.paddingLeft) || 0, r = parseFloat(c.paddingRight) || 0, t = parseFloat(c.paddingTop) || 0, b = parseFloat(c.paddingBottom) || 0;
+  return { x: l, y: t, w: Math.max(100, innerWidth - l - r), h: Math.max(100, innerHeight - t - b) };
+}
+
 export function applyLayout(layout, editing = false) {
+  const A = safeArea();
   for (const c of CONTROLS) {
     const el = $(c.id); if (!el) continue; const v = layout[c.id];
-    Object.assign(el.style, { left: v.x * 100 + '%', top: v.y * 100 + '%', right: 'auto', bottom: 'auto', transform: `translate(-50%,-50%) scale(${v.s})`, opacity: editing && v.h ? 0.35 : v.o });
+    Object.assign(el.style, { left: (A.x + v.x * A.w) + 'px', top: (A.y + v.y * A.h) + 'px', right: 'auto', bottom: 'auto', transform: `translate(-50%,-50%) scale(${v.s})`, opacity: editing && v.h ? 0.35 : v.o });
     el.hidden = !editing && v.h; el.classList.toggle('ghost-hidden', editing && v.h);
   }
 }
@@ -84,7 +91,7 @@ export class TouchEditor {
   }
   move(e) {
     if (!this.active || !this.drag) return; e.preventDefault();
-    const d = this.drag; let x = d.x + (e.clientX - d.px) / innerWidth, y = d.y + (e.clientY - d.py) / innerHeight;
+    const d = this.drag, A = safeArea(); let x = d.x + (e.clientX - d.px) / A.w, y = d.y + (e.clientY - d.py) / A.h;
     if (this.snap) { x = Math.round(x * 80) / 80; y = Math.round(y * 50) / 50; }
     this.draft[d.id].x = clamp(x, 0.02, 0.98); this.draft[d.id].y = clamp(y, 0.03, 0.97); applyLayout(this.draft, true);
   }

@@ -2,6 +2,8 @@
 import { WEAPONS, GEAR, BUY_MENU } from '/shared/weapons.js';
 import { WALL } from '/shared/constants.js';
 const $ = (id) => document.getElementById(id);
+const NADE_KEYS = ['he', 'flash', 'smoke', 'decoy', 'molotov', 'incendiary'];
+const KNIFE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l9-9"/><path d="M13 11c1.5-4 4.5-6.5 7-7-.5 2.5-3 5.5-7 7z"/></svg>';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 export class HUD {
   constructor() {
@@ -44,6 +46,8 @@ export class HUD {
   setVitals(you) {
     $('hp-v').textContent = Math.max(0, you.hp | 0); $('hpbox').querySelector('.hp').classList.toggle('low', you.hp <= 25);
     $('ar-v').textContent = you.ar | 0; $('hm').textContent = you.hm ? 'H' : '';
+    $('hpbox').querySelector('.hp').style.setProperty('--v', Math.max(0, Math.min(1, you.hp / 100)));   // thin bars under the numbers (mobile HUD)
+    $('hpbox').querySelector('.ar').style.setProperty('--v', Math.max(0, Math.min(1, you.ar / 100)));
     if (this.lastMoney !== null && you.money !== this.lastMoney) {
       const d = you.money - this.lastMoney, em = $('money-d'); em.textContent = (d > 0 ? '+' : '−') + '$' + Math.abs(d); em.style.color = d > 0 ? '#c6ffcf' : '#ffb4b4';
       em.classList.add('show'); clearTimeout(this.moneyTimer); this.moneyTimer = setTimeout(() => em.classList.remove('show'), 1600);
@@ -54,15 +58,32 @@ export class HUD {
     const name = active === 5 ? 'C4' : active === 4 && w ? w.name : w ? w.name : ''; $('wname').textContent = name;
     if (!item || !w || w.melee || w.nade || active === 5) { $('mag').textContent = '—'; $('res').textContent = ''; $('mag').classList.remove('low'); }
     else { $('mag').textContent = item.mag; $('res').textContent = '/ ' + item.res; $('mag').classList.toggle('low', item.mag <= Math.ceil(w.mag * 0.2)); }
-    const html = [1, 2, 3, 6].filter((s) => slots[s]).map((s) => `<div class="slot ${active === s ? 'on' : ''}"><b>${s}</b>${esc(WEAPONS[slots[s].k].name)}</div>`);
-    const grenades = ['he', 'flash', 'smoke'].filter((k) => this.lastNades?.[k] > 0);
-    if (active === 4 || grenades.length) html.push(`<div class="slot nade ${active === 4 ? 'on' : ''}"><b>4</b>${active === 4 && w ? esc(w.name) : 'Grenades'}</div>`);
-    if (hasBomb) html.push(`<div class="slot bomb ${active === 5 ? 'on' : ''}"><b>5</b>C4</div>`);
+    const html = [1, 2, 3, 6].filter((s) => slots[s]).map((s) => `<div class="slot ${active === s ? 'on' : ''}" data-s="${s}"><b>${s}</b>${esc(WEAPONS[slots[s].k].name)}</div>`);
+    const grenades = NADE_KEYS.filter((k) => this.lastNades?.[k] > 0);
+    if (active === 4 || grenades.length) html.push(`<div class="slot nade ${active === 4 ? 'on' : ''}" data-s="4"><b>4</b>${active === 4 && w ? esc(w.name) : 'Grenades'}</div>`);
+    if (hasBomb) html.push(`<div class="slot bomb ${active === 5 ? 'on' : ''}" data-s="5"><b>5</b>C4</div>`);
+    // ---- touch: context for the controls (which buttons make sense) + the tappable weapon bar
+    const body = document.body;
+    if (body.classList.contains('is-touch')) {
+      const kind = !w ? 'none' : active === 5 ? 'util' : w.melee ? 'melee' : w.nade ? 'util' : 'gun';
+      if (body.dataset.wk !== kind) body.dataset.wk = kind;
+      body.classList.toggle('w-scope', kind === 'gun' && !!(w.scope && w.scope.length));
+      body.classList.toggle('has-bomb', !!hasBomb);
+      const bar = $('t-slots');
+      if (bar) {
+        const img = (k) => (k === 'knife' ? KNIFE_ICON : `<img src="/img/guns/${k}.png" alt="" draggable="false">`);
+        const chips = [1, 2, 3, 6].filter((s) => slots[s]).map((s) => `<div class="slot${active === s ? ' on' : ''}" data-s="${s}"><b>${s}</b>${img(slots[s].k)}</div>`);
+        const gk = active === 4 && item && WEAPONS[item.k] && WEAPONS[item.k].nade ? item.k : grenades[0];
+        if (gk) chips.push(`<div class="slot nade${active === 4 ? ' on' : ''}" data-s="4"><b>4</b>${img(gk)}</div>`);
+        if (hasBomb) chips.push(`<div class="slot bomb${active === 5 ? ' on' : ''}" data-s="5"><b>5</b><i>C4</i></div>`);
+        const th = chips.join(''); if (th !== this._tbar) { bar.innerHTML = th; this._tbar = th; }
+      }
+    }
     const h = html.join(''); if (h !== this._slots) { $('slots').innerHTML = h; this._slots = h; }
   }
   setTop(score, round, timer, low, planted, alive) {
     $('sc-ct').textContent = score.CT; $('sc-t').textContent = score.T; $('round-no').textContent = 'ROUND ' + Math.max(1, round);
-    $('timer').textContent = timer; $('timer').classList.toggle('low', low); $('bomb-ind').hidden = !planted;
+    $('timer').textContent = timer; $('timer').classList.toggle('low', low); $('bomb-ind').hidden = !planted; document.body.classList.toggle('bomb-planted', !!planted);
     for (const t of ['T', 'CT']) { const h = alive[t].map((a) => `<i class="${a ? '' : 'dead'}"></i>`).join(''); if (this['_al' + t] !== h) { $(t === 'T' ? 'al-t' : 'al-ct').innerHTML = h; this['_al' + t] = h; } }
   }
   kill(e, meId) {

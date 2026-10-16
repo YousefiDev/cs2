@@ -291,39 +291,52 @@ if (touch) {
   game.touch = true; applyLayout(settings.touchLayout);
   $('touch').hidden = !game.inRoom;
   const stick = $('t-stick'), knob = stick.querySelector('i'); let sid = null, sx = 0, sy = 0, lid = null, lx = 0, ly = 0;
-  stick.addEventListener('touchstart', (e) => { if (editing()) return; const t = e.changedTouches[0]; sid = t.identifier; const r = stick.getBoundingClientRect(); sx = r.left + r.width / 2; sy = r.top + r.height / 2; e.preventDefault(); }, { passive: false });
+  const buzz = (ms = 8) => { try { navigator.vibrate && navigator.vibrate(ms); } catch {} };
+  // --- movement stick (dead zone in the middle, knob stays inside the ring)
+  stick.addEventListener('touchstart', (e) => { if (editing()) return; const t = e.changedTouches[0]; sid = t.identifier; const r = stick.getBoundingClientRect(); sx = r.left + r.width / 2; sy = r.top + r.height / 2; stick.classList.add('held'); e.preventDefault(); }, { passive: false });
   addEventListener('touchmove', (e) => {
     if (editing()) return;
     for (const t of e.changedTouches) {
-      if (t.identifier === sid) { const sc = settings.touchLayout['t-stick'].s; let dx = (t.clientX - sx) / sc, dy = (t.clientY - sy) / sc; const l = Math.hypot(dx, dy), m = 60; if (l > m) { dx *= m / l; dy *= m / l; } knob.style.transform = `translate(${dx}px,${dy}px)`; game.touchMove = { f: -dy / m, r: dx / m }; }
+      if (t.identifier === sid) {
+        const sc = settings.touchLayout['t-stick'].s, m = stick.offsetWidth * 0.34; let dx = (t.clientX - sx) / sc, dy = (t.clientY - sy) / sc; const l = Math.hypot(dx, dy);
+        if (l > m) { dx *= m / l; dy *= m / l; }
+        knob.style.transform = `translate(${dx}px,${dy}px)`; const f = -dy / m, r = dx / m; game.touchMove = Math.hypot(f, r) < 0.12 ? { f: 0, r: 0 } : { f, r };
+      }
       if (t.identifier === lid) { const k = 0.005 * settings.sens * settings.touchSens * (game.scope ? camera.fov / settings.fov : 1); game.yaw -= (t.clientX - lx) * k; game.pitch = Math.max(-1.5, Math.min(1.5, game.pitch - (t.clientY - ly) * k)); lx = t.clientX; ly = t.clientY; }
     }
   }, { passive: false });
-  const end = (e) => { for (const t of e.changedTouches) { if (t.identifier === sid) { sid = null; knob.style.transform = ''; game.touchMove = null; } if (t.identifier === lid) lid = null; } };
+  const end = (e) => { for (const t of e.changedTouches) { if (t.identifier === sid) { sid = null; knob.style.transform = ''; game.touchMove = null; stick.classList.remove('held'); } if (t.identifier === lid) lid = null; } };
   addEventListener('touchend', end); addEventListener('touchcancel', end);
-  $('t-look').addEventListener('touchstart', (e) => { if (editing()) return; const t = e.changedTouches[0]; lid = t.identifier; lx = t.clientX; ly = t.clientY; sound.init(); }, { passive: true });
+  // --- look area: drag to aim. While dead / spectating a tap cycles to the next player.
+  $('t-look').addEventListener('touchstart', (e) => { if (editing()) return; sound.init(); if (!game.alive) { game.specNext(1); return; } const t = e.changedTouches[0]; lid = t.identifier; lx = t.clientX; ly = t.clientY; }, { passive: true });
   // Buttons that also steer: a finger that presses FIRE can keep dragging to aim (like CODM/PUBG).
   const aimWith = (e) => { if (lid === null) { const t = e.changedTouches[0]; lid = t.identifier; lx = t.clientX; ly = t.clientY; } };
-  const hold = (id, on, off, aim) => { const b = $(id); if (!b) return;
-    b.addEventListener('touchstart', (e) => { e.preventDefault(); if (editing()) return; sound.init(); if (aim) aimWith(e); on(); }, { passive: false });
+  const hold = (id, on, off, aim, haptic = true) => { const b = $(id); if (!b) return;
+    b.addEventListener('touchstart', (e) => { e.preventDefault(); if (editing()) return; sound.init(); if (aim) aimWith(e); if (haptic) buzz(); on(); }, { passive: false });
     b.addEventListener('touchend', (e) => { e.preventDefault(); if (editing()) return; off && off(); }, { passive: false });
     b.addEventListener('touchcancel', () => { if (!editing()) off && off(); }); };
   const fireOn = () => { game.touchFire = true; if (!game.alive) game.specNext(1); }, fireOff = () => { game.touchFire = false; };
   const altOn = () => { if (game.alive && game.activeW()?.melee) game.touchFireAlt = true; }, altOff = () => { game.touchFireAlt = false; };
-  hold('t-fire', fireOn, fireOff, true); hold('t-fire2', altOn, altOff, true);
+  hold('t-fire', fireOn, fireOff, true, false); hold('t-fire2', altOn, altOff, true, false);
   hold('t-jump', () => game.touchJump = true, () => game.touchJump = false);
-  hold('t-crouch', () => game.touchCrouch = !game.touchCrouch);
-  hold('t-reload', () => game.reload()); hold('t-scope', () => game.toggleScope()); hold('t-next', () => game.cycleSlot(1));
-  hold('t-nade', () => game.switchSlot && game.switchSlot(4)); hold('t-drop', () => game.net && game.net.emit('drop'));
+  hold('t-crouch', () => { game.touchCrouch = !game.touchCrouch; $('t-crouch').classList.toggle('on', game.touchCrouch); });
+  hold('t-reload', () => game.reload()); hold('t-scope', () => game.toggleScope());
   hold('t-use', () => game.net && game.net.emit('use'), () => game.net && game.net.emit('unuse'));
   hold('t-buy', () => game.toggleBuy());
-  hold('t-chat', (e) => { utility.hidden = true; game.openChat(false); });
+  hold('t-chat', () => game.openChat(false));
   hold('t-score', () => { game.sbOpen = !game.sbOpen; hud.scoreboard(game.sbOpen, game.roster, game.meId, game.score, game.room); });
   hold('t-pause', () => game.toggleMenuPause());
-  const utility = $('t-utility'), more = $('t-more');
-  hold('t-more', () => { utility.hidden = !utility.hidden; });
-  addEventListener('pointerdown', (e) => { if (!utility.hidden && !utility.contains(e.target) && e.target !== more) utility.hidden = true; });
+  // --- weapon bar: tap = select, hold = drop that weapon
+  const bar = $('t-slots'); let barTimer = 0, barHeld = false, barSlot = null;
+  bar.addEventListener('touchstart', (e) => {
+    if (editing()) return; const el = e.target.closest('.slot'); if (!el) return; e.preventDefault(); sound.init();
+    barSlot = +el.dataset.s; barHeld = false; clearTimeout(barTimer);
+    barTimer = setTimeout(() => { barHeld = true; if (barSlot !== 4 && barSlot !== 5) { game.switchSlot(barSlot); game.net && game.net.emit('drop'); buzz(25); } }, 600);
+  }, { passive: false });
+  bar.addEventListener('touchend', (e) => { if (editing()) return; e.preventDefault(); clearTimeout(barTimer); if (barSlot && !barHeld) { game.switchSlot(barSlot); buzz(); } barSlot = null; }, { passive: false });
+  bar.addEventListener('touchcancel', () => { clearTimeout(barTimer); barSlot = null; });
   addEventListener('resize', () => { if (!editing()) applyLayout(settings.touchLayout); });
+  addEventListener('orientationchange', () => setTimeout(() => { if (!editing()) applyLayout(settings.touchLayout); }, 250));
   if (settings.gyro) enableGyro();
 }
 // ---------- loop ----------

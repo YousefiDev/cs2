@@ -675,8 +675,7 @@ export class Game {
     const now = performance.now(), snow = this.serverNow();
     if (this.alive) this.updateLocal(dt, now); else if (this.mouseL && this.touchFire) this.specNext(1);
     this.updateRemotes(dt, snow); this.updateNades(dt); this.updateCamera(dt, now); this.updateViewModel(dt, now); this.updateEffects(dt);
-    const tw = this.activeW(), tf = $('t-fire'), tf2 = $('t-fire2');
-    if (tf && tf2) { tf.textContent = tw?.melee ? 'LMB' : 'FIRE'; tf2.textContent = tw?.melee ? 'RMB' : 'ALT'; tf2.hidden = !tw?.melee; }
+    if (this.touch) { const tc = $('t-crouch'); if (tc) tc.classList.toggle('on', !!this.touchCrouch); }
     this.updateHUD(now);
     if (now - (this.radarT || 0) > 33) { this.radarT = now; this.updateRadar(); }
   }
