@@ -21,7 +21,7 @@ export const SAMPLE_DEFS = {
   hit_body: ['hit_body_1.ogg', 'hit_body_2.ogg'],
   hurt: ['hurt_1.ogg', 'hurt_2.ogg', 'hurt_3.ogg', 'hurt_4.ogg'],
   draw: ['draw_1.ogg', 'draw_2.ogg'],
-  dry: ['dry_1.ogg', 'dry_2.ogg'],
+  dry_pistol: [`${W}clipempty_pistol.wav`], dry_rifle: [`${W}clipempty_rifle.wav`], dry_zeus: [`${W}taser/taser_empty.wav`],   // trigger pulled on an empty magazine
   pickup_weapon: ['pickup_weapon_1.ogg', 'pickup_weapon_2.ogg'],
   pickup_grenade: ['grenade_pickup_1.ogg', 'grenade_pickup_2.ogg', 'grenade_pickup_3.ogg'],
   defuser_equip: ['defuser_equip.ogg'],

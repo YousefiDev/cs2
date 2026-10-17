@@ -1,6 +1,6 @@
 // Authoritative CS-style round engine. Runs on the Node server (online) or inside the browser (offline practice).
 import { TICK_RATE, PHYS, ROUND, ECON, BOT_NAMES, clamp, forward } from './constants.js';
-import { getMap, instanceMap, inRect, siteAt, calloutAt } from './maps.js';
+import { getMap, instanceMap, inRect, siteAt, calloutAt, MAP_LIST, MAP_DEFS } from './maps.js';
 import { canOccupy, groundAt, rayWorld, rayPlayer, stepMove, hasLOS, heightAt, ceilAt, traceBullet, updateDoors } from './physics.js';
 import { WEAPONS, WEAPON_KEYS, GEAR, defaultPistol, newWeapon, applyArmor, PART_MULT, NADES, NADE_LIMIT, newNades, nadeCount, firstNade, spreadDir } from './weapons.js';
 import { getNav } from './nav.js';
@@ -186,7 +186,7 @@ export class GameRoom {
     this.send(p.id, 'spawn', { x: p.x, y: p.y, z: p.z, yaw: p.yaw, cid: p.cid });
   }
   startMatch(msg) {
-    this.round = 0; this.score = { T: 0, CT: 0 }; this.loss = { T: 0, CT: 0 }; this.matchOver = false; this.matchStartAt = 0;
+    this.round = 0; this.score = { T: 0, CT: 0 }; this.loss = { T: 0, CT: 0 }; this.matchOver = false; this.matchStartAt = 0; this.mapVote = null;
     for (const p of this.players.values()) { p.money = ECON.start; p.k = p.d = p.a = 0; this.resetLoadout(p); p.alive = false; }
     this.startRound(msg || 'Match started');
   }
@@ -217,11 +217,40 @@ export class GameRoom {
     const planted = this.bomb.state === 'planted' || this.bomb.state === 'defused';
     for (const p of this.team(loser)) p.money = Math.min(ECON.max, p.money + bonus + (loser === 'T' && planted ? ECON.plantBonus : 0));
     for (const p of this.players.values()) { p.action = null; p.youDirty = true; }
-    if (this.score[winner] >= ROUND.winTo || this.round >= ROUND.maxRounds) { this.matchOver = true; this.phaseEnd = now + ROUND.matchOver * 1000; }
+    if (this.score[winner] >= ROUND.winTo || this.round >= ROUND.maxRounds) { this.matchOver = true; this.phaseEnd = now + ROUND.mapVote * 1000; }   // winner screen + map vote run in this phase
     const names = { T: 'Terrorists Win', CT: 'Counter-Terrorists Win' };
     const why = { elim: '', bomb: 'Target destroyed', defuse: 'The bomb has been defused', time: 'Target saved' }[reason];
     this.emitRound({ winner, reason, msg: this.matchOver ? `${winner === 'T' ? 'TERRORISTS' : 'COUNTER-TERRORISTS'} WIN THE MATCH` : names[winner], sub: why });
     this.rosterDirty = true;
+    if (this.matchOver) this.beginMapVote(now, winner);
+  }
+  // ---- end of the match: winner screen + vote for the next map (every map in MAP_LIST, custom maps included) ----
+  beginMapVote(now, winner) {
+    const options = MAP_LIST.map((m) => ({ id: m.id, name: m.name }));
+    this.mapVote = { options, votes: new Map(), minEnd: now + 5000 };
+    this.broadcast('mapvote', { kind: 'start', options, until: this.phaseEnd, winner, score: this.score, current: this.mapId });
+  }
+  mapTally() { const t = {}; if (this.mapVote) for (const m of this.mapVote.votes.values()) t[m] = (t[m] || 0) + 1; return t; }
+  castMapVote(p, map) {
+    const v = this.mapVote; if (!v || this.phase !== 'over' || !this.matchOver || p.bot) return { ok: false, error: 'no_vote' };
+    if (!v.options.some((o) => o.id === map)) return { ok: false, error: 'bad_map' };
+    v.votes.set(p.id, map); this.broadcast('mapvote', { kind: 'tally', votes: this.mapTally() }); return { ok: true };
+  }
+  finishMapVote() {
+    const v = this.mapVote; this.mapVote = null; let pick = this.mapId;
+    if (v) {
+      const t = this.mapTallyOf(v), top = Math.max(0, ...Object.values(t));
+      const pool = top ? Object.keys(t).filter((k) => t[k] === top) : v.options.map((o) => o.id);   // most votes wins, ties / no votes: random
+      pick = pool[Math.floor(Math.random() * pool.length)];
+      this.broadcast('mapvote', { kind: 'result', map: pick, name: (v.options.find((o) => o.id === pick) || {}).name || pick, votes: t });
+    }
+    if (pick !== this.mapId) this.changeMap(pick);
+    this.startMatch('New match');
+  }
+  mapTallyOf(v) { const t = {}; for (const m of v.votes.values()) t[m] = (t[m] || 0) + 1; return t; }
+  changeMap(id) {
+    if (!MAP_DEFS[id]) return; this.mapId = id; const base = getMap(id);
+    this.map = instanceMap(base); this.nav = getNav(base); this.broadcast('mapchange', { map: id });
   }
   checkRoundEnd() {
     if (this.phase !== 'live' && this.phase !== 'planted') return;
@@ -787,6 +816,7 @@ export class GameRoom {
       case 'pingv': p.ping = clamp(d | 0, 0, 999); return;
       case 'vote': { const kind=String(d?.kind||''); if(!['restart','mute','kick'].includes(kind)) { ack?.({ok:false,error:'bad_vote'}); return; } const r=this.startVote(kind,d?.value,p.name); ack?.(r); return; }
       case 'vote:cast': return ack?.(this.castVote(p.id, !!d?.yes));
+      case 'mapvote:cast': return ack?.(this.castMapVote(p, String((d && d.map) || '')));
     }
   }
   // ---------- main loop ----------
@@ -795,6 +825,7 @@ export class GameRoom {
     if (this.map.doors.length) updateDoors(this.map, [...this.players.values()].filter((q) => q.alive), dt);   // auto doors open for whoever is close
     for (const p of [...this.players.values()]) if (p.dc && now - p.dc > 30000) this.removePlayer(p.id);
     if (!this.players.size) return;
+    if (this.mapVote && this.phase === 'over' && this.matchOver && now >= this.mapVote.minEnd) { const hs = this.humans(); if (hs.length && hs.every((h) => this.mapVote.votes.has(h.id))) this.phaseEnd = now; }   // everybody voted: don't wait
     if (this.phase === 'warmup') {
       if (this.bothTeams() && this.humans().some((p) => p.team !== 'SPEC')) {
         if (!this.matchStartAt) { this.matchStartAt = now + 4000; this.broadcast('msg', { text: 'Match is starting', sub: 'Get ready' }); }
@@ -804,7 +835,7 @@ export class GameRoom {
     } else if (this.phase === 'freeze' && now >= this.phaseEnd) { this.phase = 'live'; this.liveStart = now; this.phaseEnd = now + ROUND.live * 1000; this.emitRound(); }
     else if (this.phase === 'live' && now >= this.phaseEnd) this.endRound('CT', 'time');
     else if (this.phase === 'planted' && now >= this.bomb.explodeAt) this.explode();
-    else if (this.phase === 'over' && now >= this.phaseEnd) { if (this.matchOver) this.startMatch('New match'); else this.startRound(); }
+    else if (this.phase === 'over' && now >= this.phaseEnd) { if (this.matchOver) this.finishMapVote(); else this.startRound(); }
 
     for (const p of this.players.values()) {
       if (!p.alive) continue;

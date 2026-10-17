@@ -48,6 +48,7 @@ const sound = new Sound(); sound.setVolume(settings.vol);
 const hud = new HUD();
 game = new Game({ renderer, scene, camera, vmScene, vmCamera, sound, hud, settings, map, touch });
 game.onMap = (id) => { game.map = loadMap(id); };
+game.syncMaps = syncCustomMaps;   // so the vote / map switch know maps that were added after the page loaded
 game.onLeave = () => showLobby();
 game.onEnter = () => { $('lobby').hidden = true; $('settings').hidden = true; $('reconnect').hidden = true; if (touch) $('touch').hidden = false; };
 requestAnimationFrame(() => $('loading').classList.add('done'));

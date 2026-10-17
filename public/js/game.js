@@ -7,6 +7,7 @@ import { WEAPONS, WEAPON_KEYS, NADES, inaccuracy, spreadDir } from '/shared/weap
 import { makeSoldier, setRigWeapon, animateRig, makeGun, makeViewArms } from './models.js';
 import * as TX from './textures.js';
 import { radio } from './audio.js';
+import { MapVote } from './mapvote.js';
 
 const INTERP = 100;
 const $ = (id) => document.getElementById(id);
@@ -33,7 +34,7 @@ export class Game {
     const on = (ev, f) => net.on(ev, f.bind(this));
     on('init', this.onInit); on('roster', this.onRoster); on('snap', this.onSnap); on('you', this.onYou); on('spawn', this.onSpawn); on('correct', this.onCorrect);
     on('round', this.onRound); on('bomb', this.onBomb); on('drops', this.onDrops); on('fx', this.onFx); on('hit', this.onHit); on('hurt', this.onHurt);
-    on('kill', this.onKill); on('profile', this.onProfile); on('vote', this.onVote); on('act', this.onAct); on('boom', this.onBoom); on('smokes', this.onSmokes); on('fires', this.onFires);
+    on('mapvote', this.onMapVote); on('mapchange', this.onMapChange); on('kill', this.onKill); on('profile', this.onProfile); on('vote', this.onVote); on('act', this.onAct); on('boom', this.onBoom); on('smokes', this.onSmokes); on('fires', this.onFires);
     on('server:closed', this.onServerClosed); on('msg', (d) => this.hud.center(d.text, d.sub || '', '', 2600)); on('chat', (d) => this.hud.chat(d));
     if (!net.offline) { clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.ping(), 2000); this.ping(); }
   }
@@ -235,7 +236,7 @@ export class Game {
     const pos = new THREE.Vector3(f.o[0], f.o[1], f.o[2]); const r = this.remotes.get(f.id); if (r) r.lastShot = performance.now();
     if (f.x === 2) { this.sound.shot(f.w, pos); this.flashAt(pos, true); return; } // decoy: sound + muzzle glint only
     if (!f.x) this.sound.shot(f.w, pos); // extra shotgun pellets are silent
-    if (f.w === 'knife') { if (f.h === 1) this.sound.knifeHit(new THREE.Vector3(...f.e), true); else if (f.h === 2) this.sound.knifeHit(new THREE.Vector3(...f.e), false); return; }
+    if (f.w === 'knife') { if (f.h === 1) this.sound.knifeHit(new THREE.Vector3(...f.e), true); else if (f.h === 2) { this.sound.knifeHit(new THREE.Vector3(...f.e), false); if (f.n) this.impact(new THREE.Vector3(...f.e), new THREE.Vector3(...f.n), false, true, 'slash'); } return; }
     this.sound.nearMiss(pos, { x: f.e[0], y: f.e[1], z: f.e[2] });
     if (r && r.rig.gun) { const mz = r.rig.gun.localToWorld(r.rig.gun.userData.muzzle.clone()); this.flashAt(mz, true); this.tracer(mz, new THREE.Vector3(...f.e)); }
     else this.tracer(pos, new THREE.Vector3(...f.e));
@@ -254,6 +255,20 @@ export class Game {
     if (e.v === this.meId) this.die(e);
     if (e.k === this.meId && e.v !== this.meId) this.sound.money();
     if (this.specId === e.v) this.specSwitchAt = performance.now() + 1800;
+  }
+  // ---- end of match: winner screen + map vote (server sends: mapvote start/tally/result, then mapchange) ----
+  onMapVote(d) {
+    if (!this.mapVoteUI) this.mapVoteUI = new MapVote((map) => this.net.emit('mapvote:cast', { map }), () => this.serverNow());
+    if (d.kind === 'start') {
+      this.closeMenus(); document.exitPointerLock?.();
+      const show = () => this.mapVoteUI.show({ ...d, myTeam: this.team });
+      (this.syncMaps ? this.syncMaps() : Promise.resolve()).then(show, show);          // custom maps added since the last visit must be known before drawing thumbnails
+    } else if (d.kind === 'tally') this.mapVoteUI.tally(d.votes);
+    else if (d.kind === 'result') this.mapVoteUI.result(d);
+  }
+  onMapChange(d) {
+    this.onMap && this.onMap(d.map); this.hud.buildRadar(this.map);
+    this.onSmokes([]); this.onFires([]); this.onDrops([]); if (this.bombMesh) this.bombMesh.visible = false; this.removeDefuseRig(); this.clearDecals();
   }
   onAct(a) {
     if (a.id === this.meId && this.you) { // show the plant/defuse bar immediately, don't wait for the next 'you' packet
@@ -302,7 +317,7 @@ export class Game {
   }
   cleanup() {
     clearInterval(this.pingTimer); this.pingTimer = null;
-    this._modal = false; document.body.classList.remove('ui-modal');
+    this._modal = false; document.body.classList.remove('ui-modal'); this.mapVoteUI && this.mapVoteUI.hide();
     this.inRoom = false; this.alive = false; this.you = null; this.room = null; this.closeMenus(); document.exitPointerLock?.();
     for (const id of [...this.remotes.keys()]) this.removeRemote(id);
     for (const m of this.dropMeshes.values()) this.scene.remove(m); this.dropMeshes.clear(); for (const g of this.nadeMeshes.values()) this.scene.remove(g); this.nadeMeshes.clear(); this.onSmokes([]); for (const fx of this.smokeFx.values()) this.scene.remove(fx.g); this.smokeFx.clear(); for (const fx of this.fireFx.values()) this.scene.remove(fx.g); this.fireFx.clear(); this.blind = 0; if (this.bombMesh) this.bombMesh.visible = false;
@@ -395,13 +410,14 @@ export class Game {
     if (this.phase === 'freeze' || now < this.nextFire || now < this.drawEnd || this.reloadUntil) return;
     if (!w.auto && this.trigger && !w.melee) return;
     if (w.melee && alt && this.altTrigger) return;
-    if (!w.melee && it.mag <= 0) { if (!this.dry) { this.dry = true; this.sound.dry(); if (it.res > 0) this.reload(); } return; }
+    if (!w.melee && it.mag <= 0) { if (!this.dry) { this.dry = true; if (it.res > 0) this.reload(); else this.sound.dry(it.k); } return; }
     if (w.melee) this.trigger = !alt;
     if (w.melee) this.altTrigger = alt;
     const rpm = (w.melee && alt && w.altRpm) ? w.altRpm : w.rpm;
     const interval = 60000 / rpm; this.nextFire = now + interval;
     if (now - this.lastShotT > interval * 1.6 + 150) this.shotsFired = 0; this.shotsFired++; this.lastShotT = now; this.lastLocalShot = now;
     if (!w.melee) it.mag--;
+    if (!w.melee && it.mag <= 0 && it.res > 0) { const k0 = it.k; setTimeout(() => { const cur = this.activeItem(); if (this.alive && cur && cur.k === k0 && cur.mag <= 0) this.reload(); }, 180); }   // last bullet gone: reload by itself
     const s = this.s, eye = [s.x, s.y + this.eyeH, s.z];
     const inac = inaccuracy(w, { speed: Math.hypot(s.vx, s.vz), grounded: s.onGround, crouch: s.crouch, shots: this.shotsFired, scoped: this.scope > 0 });
     const dir = w.melee ? forward(this.yaw, this.pitch) : spreadDir(forward(this.yaw + this.punchY, this.pitch + this.punchP), inac);
@@ -425,7 +441,7 @@ export class Game {
       this.flashAt(this.camera.position, false); this.vmFlash = now + 45; this.vmKick = 1.6;
       this.punchP += w.kick * 1.4; this.punchY += (Math.random() - 0.5) * w.side * 2; return;
     }
-    if (w.melee) { this.vmKick = alt ? 1.35 : 1; this.vmKnifeAlt = !!alt; if (!best && wall.t < range && wall.n) { this.impact(end, new THREE.Vector3(...wall.n), true, true); this.sound.knifeHit(end, false); } if (best) { this.blood(end, true); this.sound.knifeHit(end, true); } return; }
+    if (w.melee) { this.vmKick = alt ? 1.35 : 1; this.vmKnifeAlt = !!alt; if (!best && wall.t < range && wall.n) { this.impact(end, new THREE.Vector3(...wall.n), true, true, alt ? 'stab' : 'slash'); this.sound.knifeHit(end, false); } if (best) { this.blood(end, true); this.sound.knifeHit(end, true); } return; }
     const mz = this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
     if (this.shotsFired % 2 === 1 || !w.auto) this.tracer(mz, end);
     this.flashAt(this.camera.position, false); this.vmFlash = now + 45; this.vmKick = 1;
@@ -532,11 +548,29 @@ export class Game {
   flashAt(pos, remote) { this.flashLight.position.copy(pos); this.flashLight.intensity = remote ? 18 : 10; this.flashT = 0.05; if (remote) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texStar, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); s.position.copy(pos); s.scale.setScalar(0.5); s.material.rotation = Math.random() * 6; this.addFx(s, 0.05); } }
   tracer(a, b) { const g = new THREE.BufferGeometry().setFromPoints([a, b]); const l = new THREE.Line(g, this.tracerMat.clone()); this.addFx(l, 0.07, (fx, k) => { l.material.opacity = 0.55 * k; }); }
   puff(pos, tex, size, life, rise = 0.4) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true })); s.position.copy(pos); s.scale.setScalar(size * 0.4); this.addFx(s, life, (fx, k) => { s.material.opacity = k; s.scale.setScalar(size * (1.4 - k)); s.position.y += rise * 0.016; }); }
-  impact(p, n, local, silent) {
+  // kind: undefined = bullet hole, 'slash' / 'stab' = scratch left by the knife
+  slashAssets() {
+    if (this._slashMat) return;
+    const c = document.createElement('canvas'); c.width = 256; c.height = 48; const g = c.getContext('2d'); g.lineCap = 'round';
+    g.strokeStyle = 'rgba(18,15,12,0.92)'; g.lineWidth = 5; g.beginPath(); g.moveTo(14, 27); g.lineTo(242, 21); g.stroke();     // dark groove
+    g.strokeStyle = 'rgba(238,228,205,0.65)'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(16, 23); g.lineTo(238, 17); g.stroke(); // chipped lighter edge
+    const gr = g.createLinearGradient(0, 0, 256, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.14, '#000'); gr.addColorStop(0.86, '#000'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.globalCompositeOperation = 'destination-in'; g.fillStyle = gr; g.fillRect(0, 0, 256, 48);                                       // tapered ends
+    this._slashMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    this._slashGeo = new THREE.PlaneGeometry(0.5, 0.094);
+  }
+  impact(p, n, local, silent, kind) {
     if (!silent) this.sound.impactWall(p);
     let d = this.decals[this.decalIdx]; if (!d) { d = new THREE.Mesh(this.holeGeo, this.holeMat); this.scene.add(d); this.decals[this.decalIdx] = d; }
-    this.decalIdx = (this.decalIdx + 1) % 160; d.visible = true; d.position.copy(p).addScaledVector(n, 0.012); d.lookAt(p.clone().add(n)); d.rotateZ(Math.random() * 6);
-    this.puff(p.clone().addScaledVector(n, 0.08), this.texDust, 0.55, 0.5);
+    this.decalIdx = (this.decalIdx + 1) % 160; d.visible = true; d.position.copy(p).addScaledVector(n, 0.012); d.lookAt(p.clone().add(n));
+    if (kind === 'slash' || kind === 'stab') {
+      this.slashAssets(); d.geometry = this._slashGeo; d.material = this._slashMat; d.scale.setScalar(kind === 'stab' ? 0.38 : 1);
+      d.rotateZ((Math.random() < 0.5 ? 1 : -1) * (0.3 + Math.random() * 0.6));                    // diagonal scratch, never a round hole
+      this.puff(p.clone().addScaledVector(n, 0.05), this.texDust, 0.28, 0.35);
+    } else {
+      d.geometry = this.holeGeo; d.material = this.holeMat; d.scale.setScalar(1); d.rotateZ(Math.random() * 6);
+      this.puff(p.clone().addScaledVector(n, 0.08), this.texDust, 0.55, 0.5);
+    }
   }
   clearDecals() { for (const d of this.decals) if (d) d.visible = false; }
   blood(p, silent) { if (!silent) this.sound.impactFlesh(p); for (let i = 0; i < 2; i++) this.puff(p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.2)), this.texBlood, 0.5, 0.35, -0.2); }
@@ -639,7 +673,7 @@ export class Game {
     const touchLayer = $('touch');
     if (touchLayer && !document.body.classList.contains('ui-editing')) touchLayer.classList.toggle('touch-dead', !this.alive);
     if (this.alive) $('death').hidden = true;
-    const modal = this.buyOpen || this.chatOpen || !$('pause').hidden || !$('teamsel').hidden || !$('settings').hidden;
+    const modal = this.buyOpen || this.chatOpen || !$('pause').hidden || !$('teamsel').hidden || !$('settings').hidden || !$('mapvote').hidden;
     if (modal !== this._modal) { this._modal = modal; document.body.classList.toggle('ui-modal', modal); }
     $('clickplay').hidden = this.locked || this.touch || !$('teamsel').hidden || this.buyOpen || !$('pause').hidden || !this.inRoom;
     if (this.buyOpen && !this.canBuy()) this.toggleBuy(false);

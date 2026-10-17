@@ -3,6 +3,7 @@
 // REAL SAMPLES: every sound name is mapped to its file in js/soundmap.js (files live in public/audio/cs2/).
 // A sound whose file is missing falls back to the synthesized version below.
 import { SAMPLE_DEFS, RELOAD_PARTS } from './soundmap.js';
+const PISTOL_KEYS = new Set(['glock', 'usp', 'p2000', 'elite', 'p250', 'tec9', 'fiveseven', 'cz75', 'deagle', 'r8']);
 const SHOT = {
   // g=overall gain  cf/cg=crack freq/gain  bf/bd/bg=body freq/dur/gain  kf/kd/kg=boom freq/dur/gain  td/tg/tf=tail dur/gain/freq  mech=action clack  sup=suppressed
   ak47:  { g: 1.0,  cf: 2200, cg: 0.9,  bf: 1800, bd: 0.16, bg: 1.0,  kf: 150, kd: 0.14, kg: 1.0,  td: 0.45, tg: 0.35, tf: 1400, mech: 0.25 },
@@ -170,7 +171,10 @@ export class Sound {
     for (const [f, kind] of seq) this.mech(o, t + dur * f, kind);
   }
   draw(k) { if (!this.ctx) return; this.cancelReload('me'); if (k && this.playSample(`draw_${k}`, null, 0.8, 0)) return; if (this.playSample('draw', null, 0.8, 0)) return; this.click(0.2, 1200); }
-  dry() { if (!this.ctx) return; if (this.playSample('dry')) return; this.clack(this.out(null, 1.2), this.ctx.currentTime, 0.5, 3500); }
+  dry(k) { // empty magazine click (pistol / rifle / taser flavour)
+    if (!this.ctx) return; const n = k === 'zeus' ? 'dry_zeus' : PISTOL_KEYS.has(k) ? 'dry_pistol' : 'dry_rifle';
+    if (this.playSample(n, null, 1.1, 0)) return; this.clack(this.out(null, 1.2), this.ctx.currentTime, 0.5, 3500);
+  }
   click(gain = 0.3, f = 2400, pos = null, delay = 0) { if (!this.ctx) return; const t = this.ctx.currentTime + delay; this.noiseBurst(this.out(pos, gain), t, 0.04, f, 3, 'bandpass', 0.9); }
   hit(head) {
     if (!this.ctx) return; if (this.playSample(head ? 'hit_head' : 'hit_body')) return;
