@@ -29,7 +29,9 @@ export const SAMPLE_DEFS = {
   zoom_out: [`${W}weapon_zoom_out_02.wav`, `${W}weapon_zoom_out_03.wav`],
 
   // ---------- gunshots: flat ogg where you have them ----------
-  aug: flat('aug'), famas: flat('famas'), m4a1s: flat('m4a1s'), m4a4: flat('m4a4'), mp9: flat('mp9'), usp: flat('usp'),
+  // USP-S, MP9, FAMAS, M4A4, M4A1-S, AUG: also from the original extracted recordings
+  usp: range(`${W}usp/usp_`, 1, 3), mp9: range(`${W}mp9/mp9_`, 1, 4), famas: range(`${W}famas/famas_`, 1, 3),
+  m4a4: range(`${W}m4a1/m4a1_`, 1, 4), m4a1s: [`${W}m4a1/m4a1_silencer_01.wav`], aug: range(`${W}aug/aug_`, 1, 4),
   // these 8 had glitchy/cut-off flat .ogg files -> use the original extracted recordings instead
   ak47: range(`${W}ak47/ak47_`, 1, 4), awp: range(`${W}awp/awp_`, 1, 2), deagle: range(`${W}deagle/deagle_`, 1, 2),
   galil: range(`${W}galilar/galil_`, 1, 4), glock: range(`${W}glock18/glock_`, 1, 2), mac10: range(`${W}mac10/mac10_`, 1, 2),
@@ -61,8 +63,6 @@ export const SAMPLE_DEFS = {
 
   // ---------- full reload recordings you already have as flat files ----------
   reload: ['reload_generic.ogg'],
-  reload_aug: ['reload_aug.ogg'], reload_famas: ['reload_famas.ogg'], reload_m4a1s: ['reload_m4a1s.ogg'],
-  reload_m4a4: ['reload_m4a4.ogg'], reload_mp9: ['reload_mp9.ogg'], reload_usp: ['reload_usp.ogg'],
 
   // ---------- grenades ----------
   throw_he: [`${W}hegrenade/grenade_throw.wav`],
@@ -91,8 +91,13 @@ export const SAMPLE_DEFS = {
   fire_end: [`${W}molotov/fire_loop_fadeout_01.wav`, `${W}molotov/molotov_extinguish.wav`],
 
   // ---------- bomb ----------
-  c4_beep: ['c4_beep.ogg'], c4_beep_fast: ['c4_beep_fast.ogg'], c4_plant: ['c4_plant.ogg'], c4_planted: ['c4_planted.ogg'],
-  c4_defuse: ['c4_defuse.ogg'], c4_defused: ['c4_defused.ogg'], c4_explode: ['c4_explode.ogg'],
+  // (all from source-real/weapons/c4)
+  c4_beep: [`${W}c4/c4_beep2.wav`], c4_beep_fast: [`${W}c4/c4_beep2_10sec.wav`],            // countdown beep / the last 10 seconds
+  c4_initiate: [`${W}c4/c4_initiate.wav`], c4_key: range(`${W}c4/key_press`, 1, 7, 'mp3', 0),   // planting: start + keypad presses
+  c4_planted: [`${W}c4/c4_plant.wav`],                                                         // planting finished
+  c4_defuse: [`${W}c4/c4_disarmstart.wav`], c4_defused: [`${W}c4/c4_disarmfinish.wav`], c4_click: [`${W}c4/c4_click.wav`],
+  c4_explode: [`${W}c4/c4_explode1.wav`], c4_debris: [`${W}c4/c4_exp_deb1.wav`, `${W}c4/c4_exp_deb2.wav`],
+  c4_close: [`${W}c4/c4_explode_close_01.mp3`], c4_shock: [`${W}c4/c4_shockwave_01.mp3`, `${W}c4/c4_thump_01.mp3`],
 
   // ---------- impacts / bodies ----------
   bullet_wall: range(`${PH}concrete/concrete_impact_bullet`, 1, 7, 'wav', 1),
@@ -117,6 +122,12 @@ export const RELOAD_PARTS = {
   mac10: [[0.15, `${W}mac10/mac10_clipout.wav`], [0.5, `${W}mac10/mac10_clipin.mp3`], [0.72, `${W}mac10/mac10_boltback.wav`], [0.83, `${W}mac10/mac10_boltforward.wav`]],
   p90: [[0.08, `${W}p90/p90_cliprelease.wav`], [0.2, `${W}p90/p90_clipout.wav`], [0.5, `${W}p90/p90_clipin.wav`], [0.57, `${W}p90/p90_cliphit.wav`], [0.76, `${W}p90/p90_boltback.wav`], [0.86, `${W}p90/p90_boltforward.wav`]],
   sg553: [[0.15, `${W}sg556/sg556_clipout.mp3`], [0.48, `${W}sg556/sg556_clipin.wav`], [0.55, `${W}sg556/sg556_cliphit.wav`], [0.73, `${W}sg556/sg556_boltback.mp3`], [0.84, `${W}sg556/sg556_boltforward.wav`]],
+  usp: [[0.15, `${W}usp/usp_clipout.wav`], [0.5, `${W}usp/usp_clipin.wav`], [0.72, `${W}usp/usp_slideback.wav`], [0.82, `${W}usp/usp_sliderelease.wav`]],
+  mp9: [[0.15, `${W}mp9/mp9_clipout.mp3`], [0.5, `${W}mp9/mp9_clipin.mp3`], [0.72, `${W}mp9/mp9_boltback.wav`], [0.83, `${W}mp9/mp9_boltforward.wav`]],
+  famas: [[0.15, `${W}famas/famas_clipout.wav`], [0.48, `${W}famas/famas_clipin.mp3`], [0.55, `${W}famas/famas_cliphit.mp3`], [0.72, `${W}famas/famas_boltback.wav`], [0.83, `${W}famas/famas_boltforward.wav`]],
+  m4a4: [[0.15, `${W}m4a1/m4a1_clipout.mp3`], [0.48, `${W}m4a1/m4a1_clipin.mp3`], [0.55, `${W}m4a1/m4a1_cliphit.wav`], [0.72, `${W}m4a1/m4a1_boltback.mp3`], [0.83, `${W}m4a1/m4a1_boltforward.mp3`]],
+  m4a1s: [[0.15, `${W}m4a1/m4a1_clipout.mp3`], [0.48, `${W}m4a1/m4a1_clipin.mp3`], [0.55, `${W}m4a1/m4a1_cliphit.wav`], [0.72, `${W}m4a1/m4a1_silencer_boltback.wav`], [0.83, `${W}m4a1/m4a1_silencer_boltforward.wav`]],
+  aug: [[0.15, `${W}aug/aug_clipout.mp3`], [0.48, `${W}aug/aug_clipin.mp3`], [0.55, `${W}aug/aug_cliphit.mp3`], [0.72, `${W}aug/aug_boltpull.mp3`], [0.83, `${W}aug/aug_boltrelease.mp3`]],
   p2000: [[0.2, `${W}hkp2000/hkp2000_clipout.wav`], [0.55, `${W}hkp2000/hkp2000_clipin.mp3`], [0.8, `${W}hkp2000/hkp2000_sliderelease.wav`]],
   elite: [[0.15, `${W}elite/elite_clipout.wav`], [0.4, `${W}elite/elite_leftclipin.wav`], [0.6, `${W}elite/elite_rightclipin.wav`], [0.85, `${W}elite/elite_sliderelease.wav`]],
   p250: [[0.2, `${W}p250/p250_clipout.wav`], [0.55, `${W}p250/p250_clipin.mp3`], [0.8, `${W}p250/p250_sliderelease.wav`]],

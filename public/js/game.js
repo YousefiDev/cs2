@@ -263,7 +263,7 @@ export class Game {
     const r = this.remotes.get(a.id); const pos = r ? r.rig.root.position.clone() : new THREE.Vector3(this.s.x, this.s.y, this.s.z);
     if (a.type === 'plant') this.sound.keypad(pos, a.id);
     else if (a.type === 'cancel') this.sound.cancelKeypad(a.id);
-    else if (a.type === 'defuse') this.sound.defuse(pos, a.id);
+    else if (a.type === 'defuse') { this.defKit = !!a.kit; this.sound.defuse(pos, a.id); }
     else if (a.type === 'reload' && r) this.sound.reload(a.k || null, (WEAPONS[a.k] && WEAPONS[a.k].reload) || 2.4, pos, a.id);
     else if (a.type === 'throw' && r) this.sound.nadeThrow(pos, a.k);
   }
@@ -555,9 +555,61 @@ export class Game {
     const b = this.bomb;
     if (b.state === 'planted' && b.explodeAt) {
       const left = (b.explodeAt - this.serverNow()) / 1000, interval = left < 2 ? 0.1 : Math.max(0.15, Math.min(1, left / 40));
-      const now = performance.now() / 1000; if (now - this.lastBeep > interval) { this.lastBeep = now; this.sound.beep(new THREE.Vector3(b.x, b.y + 0.2, b.z), left < 5); if (this.bombLed) this.bombLed.visible = true; }
+      const now = performance.now() / 1000; if (now - this.lastBeep > interval) { this.lastBeep = now; this.sound.beep(new THREE.Vector3(b.x, b.y + 0.2, b.z), left < 10); if (this.bombLed) this.bombLed.visible = true; }
       if (this.bombLed && now - this.lastBeep > 0.08) this.bombLed.visible = false;
     }
+    this.updateDefuseRig();
+  }
+  // ---- defuse rig: while a CT defuses, a small kit is wired to the C4 with TWO cables (red + blue).
+  // The red one is cut at the halfway mark, the blue one at the end (snip sound + spark).
+  buildDefuseRig(b) {
+    const du = b.defuser === this.meId ? this.s : this.remotes.get(b.defuser);
+    let dx = du ? du.x - b.x : 1, dz = du ? du.z - b.z : 0; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+    const g = new THREE.Group(); this.scene.add(g);
+    const kit = new THREE.Group(); kit.position.set(b.x + dx * 0.62, b.y + 0.05, b.z + dz * 0.62); kit.rotation.y = Math.atan2(dx, dz); g.add(kit);
+    const dark = new THREE.MeshStandardMaterial({ color: '#2a2e34', roughness: 0.6, metalness: 0.3 }), lid = new THREE.MeshStandardMaterial({ color: '#3d434c', roughness: 0.5, metalness: 0.4 });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.09, 0.2), dark); const top = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.014, 0.15), lid); top.position.y = 0.05;
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.014, 0.035), new THREE.MeshBasicMaterial({ color: '#35ff6b' })); led.position.set(0.08, 0.06, 0.03);
+    kit.add(body, top, led); kit.updateMatrixWorld(true);
+    const perp = new THREE.Vector3(-dz, 0, dx), fwd = new THREE.Vector3(dx, 0, dz), wires = [];
+    [['#d0382d', -1], ['#2b6fe0', 1]].forEach(([color, s], i) => {
+      const p0 = new THREE.Vector3(b.x, b.y + 0.12, b.z).addScaledVector(fwd, 0.12).addScaledVector(perp, s * 0.07);   // port on the C4
+      const p1 = kit.localToWorld(new THREE.Vector3(s * 0.06, 0.0, -0.11));                                              // port on the kit
+      const mid = (f, sag) => p0.clone().lerp(p1, f).add(new THREE.Vector3(0, sag, 0)).addScaledVector(perp, s * (0.02 + 0.03 * f));
+      const pts = [p0, mid(0.33, -0.05), mid(0.66, -0.07), p1].map((p) => { p.y = Math.max(p.y, b.y + 0.02); return p; });
+      const curve = new THREE.CatmullRomCurve3(pts), mat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+      const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.012, 6), mat); g.add(mesh); wires.push({ mesh, curve, mat, cut: false, i });
+    });
+    this.defRig = { g, led, wires, sparks: [], defuser: b.defuser, kit: b.defuser === this.meId ? !!(this.you && this.you.kit) : !!this.defKit, endAt: 0 };
+  }
+  cutWire(R, w, spark) {
+    if (w.cut) return; w.cut = true; R.g.remove(w.mesh); w.mesh.geometry.dispose();
+    const pts = w.curve.getPoints(24);
+    for (const seg of [pts.slice(0, 8), pts.slice(16)]) R.g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(seg), 8, 0.012, 6), w.mat));   // the two cut ends
+    if (!spark) return;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texGlow, color: '#ffd27a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+    sp.position.copy(pts[12]); sp.scale.setScalar(0.2); R.g.add(sp); R.sparks.push({ sp, t0: performance.now() });
+    this.sound.wireCut(pts[12].clone());
+  }
+  removeDefuseRig() {
+    const R = this.defRig; if (!R) return; this.scene.remove(R.g);
+    R.g.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); this.defRig = null;
+  }
+  updateDefuseRig() {
+    const b = this.bomb, now = performance.now(), active = b && b.state === 'planted' && b.defuser && b.defuseEnd;
+    let R = this.defRig;
+    if (R) for (let i = R.sparks.length - 1; i >= 0; i--) { const s = R.sparks[i], k = (now - s.t0) / 240; if (k >= 1) { R.g.remove(s.sp); s.sp.material.dispose(); R.sparks.splice(i, 1); } else { s.sp.material.opacity = 1 - k; s.sp.scale.setScalar(0.2 + k * 0.45); } }
+    if (!active) {
+      if (!R) return;
+      if (b && b.state === 'defused') { if (!R.endAt) { for (const w of R.wires) this.cutWire(R, w, false); R.endAt = now + 3500; R.led.material.color.set('#35ff6b'); } else if (now > R.endAt) this.removeDefuseRig(); }
+      else this.removeDefuseRig();
+      return;
+    }
+    if (!R || R.defuser !== b.defuser) { this.removeDefuseRig(); this.buildDefuseRig(b); R = this.defRig; }
+    const total = R.kit ? ROUND.defuseKit : ROUND.defuse, prog = Math.max(0, Math.min(1, 1 - (b.defuseEnd - this.serverNow()) / 1000 / total));
+    R.led.material.color.set(Math.floor(now / 250) % 2 ? '#35ff6b' : '#0c5a22');
+    if (prog > 0.5) this.cutWire(R, R.wires[0], true);
+    if (prog > 0.92) this.cutWire(R, R.wires[1], true);
   }
   // ---------------- HUD ----------------
   updateHUD(now) {

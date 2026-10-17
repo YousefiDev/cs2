@@ -271,7 +271,12 @@ export class Sound {
     if (!this.ctx) return;
     this.cancelKeypad(owner);
     const nodes = new Set(); this.plantSounds.set(owner, nodes);
-    const hp = this.playSample('c4_plant', pos, 1.0, 0.1); if (hp) { nodes.add(hp); setTimeout(() => { if (this.plantSounds.get(owner) === nodes) this.plantSounds.delete(owner); }, 3600); return; }
+    if (this.samples.has('c4_key')) {            // real: start sound, then the keypad presses
+      const h0 = this.playSample('c4_initiate', pos, 1.0, 0.1); if (h0) nodes.add(h0);
+      for (let i = 0; i < 7; i++) { const h = this.playSample('c4_key', pos, 0.8, 0.1, 1, 0.45 + i * 0.36); if (h) nodes.add(h); }
+      setTimeout(() => { if (this.plantSounds.get(owner) === nodes) this.plantSounds.delete(owner); }, 4000); return;
+    }
+    this.ensure('c4_key'); this.ensure('c4_initiate');
     const t = this.ctx.currentTime;
     for (let i = 0; i < 7; i++) {
       const o = this.out(pos, 0.8, 0.15), tt = t + i * 0.36, r = DTMF_ROWS[Math.floor(Math.random() * 4)], c = DTMF_COLS[Math.floor(Math.random() * 3)];
@@ -306,13 +311,22 @@ export class Sound {
     }
     setTimeout(() => { if (this.plantSounds.get(owner) === nodes) this.plantSounds.delete(owner); }, 8000);
   }
+  wireCut(pos) { // a cable of the C4 gets cut (snip + tiny zap)
+    if (!this.ctx) return; this.playSample('c4_click', pos, 1.0, 0.1);
+    const t = this.ctx.currentTime, o = this.out(pos, 0.7, 0.1); this.noiseBurst(o, t, 0.05, 6000, 1, 'highpass', 0.45, 1, 0.001, 0.5); this.tone(o, t, 2400, 0.06, 'square', 0.1, 600);
+  }
   defused(pos) { // successful defuse
     if (!this.ctx) return; this.cancelAll(); if (this.playSample('c4_defused', pos, 1.1, 0.2)) return;
     const t = this.ctx.currentTime, o = this.out(pos, 1.2, 0.3);
     this.clack(o, t, 0.6, 2600); this.tone(o, t + 0.08, 1320, 0.25, 'sine', 0.4); this.tone(o, t + 0.2, 1760, 0.4, 'sine', 0.4); this.tone(o, t + 0.2, 880, 0.4, 'triangle', 0.2);
   }
   explosion(pos) { // C4 detonation
-    if (!this.ctx) return; if (this.playSample('c4_explode', pos, 1.2, 0.25)) return;
+    if (!this.ctx) return;
+    if (this.playSample('c4_explode', pos, 1.3, 0.3)) {                           // real blast + debris, plus the shock wave when you are close
+      this.playSample('c4_debris', pos, 0.8, 0.35, 1, 0.45);
+      if (!this.far(pos, 60)) { this.playSample('c4_close', pos, 1.0, 0.2); this.playSample('c4_shock', pos, 0.9, 0.2, 1, 0.1); }
+      return;
+    }
     const t = this.ctx.currentTime, o = this.out(pos, 1.6, 0.9);
     this.noiseBurst(o, t, 0.12, 6000, 0.5, 'highpass', 1.0, 1.2, 0.001, 0.3);                           // initial crack
     this.noiseBurst(o, t, 1.4, 2400, 0.4, 'lowpass', 1.0, 1, 0.003, 0.08);                              // blast

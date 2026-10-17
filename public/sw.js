@@ -1,4 +1,4 @@
-const CACHE = 'cs-dust-online-v15-mobile-hud';
+const CACHE = 'cs-dust-online-v16-c4-wires';
 const CORE = [
   '/', '/manifest.webmanifest', '/css/style.css', '/css/mobile.css',
   '/js/main.js', '/js/game.js', '/js/hud.js', '/js/models.js',
