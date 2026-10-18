@@ -38,9 +38,9 @@ export class Game {
     on('server:closed', this.onServerClosed); on('msg', (d) => this.hud.center(d.text, d.sub || '', '', 2600)); on('chat', (d) => this.hud.chat(d));
     if (!net.offline) { clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.ping(), 2000); this.ping(); }
   }
-  onServerClosed() {
+  onServerClosed(d) {
     this.cleanup();
-    this.onLeave && this.onLeave();
+    this.onLeave && this.onLeave(d && d.reason);
   }
   ping() {
     if (!this.net || this.net.offline) return; const t0 = Date.now();

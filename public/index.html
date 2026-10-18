@@ -28,6 +28,21 @@
 <div id="flashed" aria-hidden="true"></div>
 
 <!-- ================= LOBBY ================= -->
+<div id="authbox" class="authbox" hidden dir="rtl">
+  <div class="auth-card">
+    <div class="auth-top"><h2 id="au-title">ورود به حساب</h2><button id="au-close" class="icon-btn" aria-label="بستن">✕</button></div>
+    <div id="au-tabs" class="auth-tabs"><button data-m="login" class="on">ورود</button><button data-m="register">ثبت‌نام</button></div>
+    <label data-row="user"><span>نام کاربری</span><input id="au-user" maxlength="16" autocomplete="username" spellcheck="false" dir="ltr" placeholder="username"></label>
+    <label data-row="nick" hidden><span>نام نمایشی <em>(داخل بازی؛ می‌تواند تکراری باشد)</em></span><input id="au-nick" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Player"></label>
+    <label data-row="old" hidden><span>رمز فعلی</span><input id="au-old" type="password" maxlength="64" autocomplete="current-password" dir="ltr"></label>
+    <label data-row="newp" hidden><span>رمز جدید</span><input id="au-newpass" type="password" maxlength="64" autocomplete="new-password" dir="ltr"></label>
+    <label data-row="pass"><span>رمز عبور</span><input id="au-pass" type="password" maxlength="64" autocomplete="current-password" dir="ltr"></label>
+    <label data-row="pass2" hidden><span>تکرار رمز عبور</span><input id="au-pass2" type="password" maxlength="64" autocomplete="new-password" dir="ltr"></label>
+    <p id="au-msg" class="au-msg"></p>
+    <button id="au-go" class="cta big-cta">ورود</button>
+    <p id="au-note" class="au-note" hidden>با ثبت‌نام یک <b>آیدی عددی یکتا</b> می‌گیری. XP، رنک و سابقه‌ات به همین آیدی وصل می‌شود؛ پس اگر کسی هم‌نام تو بود، با تو قاطی نمی‌شود.</p>
+  </div>
+</div>
 <section id="lobby" class="screen">
   <header class="brand">
     <div class="brand-kicker">COUNTER-STRIKE</div>
@@ -37,6 +52,15 @@
 
   <div class="lobby-grid">
     <div class="col col-play">
+      <div id="acct" class="acct" hidden>
+        <div id="acct-in" class="acct-in" hidden>
+          <div class="acct-main"><span id="acct-rank" class="acct-rank"></span><b id="acct-nick"></b></div>
+          <div class="acct-meta" dir="ltr"><span id="acct-id"></span><span id="acct-user"></span></div>
+          <div class="acct-actions"><button id="acct-nick-btn" class="icon-btn" title="تغییر نام نمایشی" aria-label="تغییر نام نمایشی">✎</button><button id="acct-pw-btn" class="icon-btn" title="تغییر رمز" aria-label="تغییر رمز">🔑</button><button id="acct-out" class="acct-out">خروج</button></div>
+        </div>
+        <div id="acct-out-box" class="acct-guest"><button id="acct-login" class="cta">ورود / ثبت‌نام</button></div>
+        <p id="acct-hint" class="acct-hint"></p>
+      </div>
       <label class="field">
         <span>نام بازیکن</span>
         <input id="name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Player" dir="ltr" />

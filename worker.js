@@ -36,17 +36,26 @@ function reply(ws, id, data) {
   }
 }
 
+// Constant-time key compare (no early exit on the first wrong character).
+function safeEq(a, b) {
+  a = String(a ?? ''); b = String(b ?? ''); if (!b) return false;
+  let r = a.length ^ b.length; const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i++) r |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
+  return r === 0;
+}
+
 export class GameServer {
   constructor(state, env) {
     this.state = state;
     this.env = env;
     this.sockets = new Map();
+    this.authFails = new Map();   // ip -> {n, until}: admin key brute-force limiter
     this.editorSockets = new Set();
     this.customMaps = {};
     this.readyDone = false;
     this.lastSaved = new Map();   // top-level data key -> last persisted JSON
     this.saveTimer = null;
-    this.core = new ServerCore();
+    this.core = new ServerCore({ requireLogin: env.REQUIRE_LOGIN !== '0' });   // players must log in (set REQUIRE_LOGIN=0 to allow guests)
     this.core.onSaveData = () => this.scheduleSave();
     this.ready = this.boot(env);
     this.editorReady = this.ready;
@@ -62,7 +71,7 @@ export class GameServer {
   async boot(env) {
     try {
       const st = this.state.storage;
-      const [custom, legacy, split] = await Promise.all([st.get('customMaps'), st.get('data'), st.list({ prefix: 'd:' })]);
+      const [custom, legacy, split, accs, sess] = await Promise.all([st.get('customMaps'), st.get('data'), st.list({ prefix: 'd:' }), st.list({ prefix: 'a:' }), st.list({ prefix: 's:' })]);
       this.customMaps = custom || {};
       this.applyCustomMaps();
       let data = null;
@@ -79,6 +88,11 @@ export class GameServer {
       } else if (env.DEFAULT_SERVERS !== '0') {
         this.core.ensureDefaultServers(DEFAULT_SERVERS);
       }
+      // accounts and login sessions are stored one record per key (a Durable Object value is limited to 128 KiB)
+      this.core.data.accounts = {}; this.core.data.sessions = {};
+      for (const [k, v] of accs) { this.core.data.accounts[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
+      for (const [k, v] of sess) { this.core.data.sessions[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
+      this.core.rebuildAccounts();
     } catch (e) { console.error('[boot]', e && e.message); }
     this.readyDone = true;
   }
@@ -87,11 +101,19 @@ export class GameServer {
   // Writes only the top-level keys that changed (profiles XP no longer rewrites the server list, and vice versa).
   async flush() {
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
-    const batch = {}, sigs = [];
-    for (const [k, v] of Object.entries(this.core.data)) { const j = JSON.stringify(v); if (this.lastSaved.get(k) !== j) { batch['d:' + k] = v; sigs.push([k, j]); } }
-    if (!sigs.length) return;
-    await this.state.storage.put(batch);
+    const batch = {}, sigs = [], dels = [];
+    for (const [k, v] of Object.entries(this.core.data)) { if (k === 'accounts' || k === 'sessions') continue; const j = JSON.stringify(v); if (this.lastSaved.get(k) !== j) { batch['d:' + k] = v; sigs.push([k, j]); } }
+    for (const [m, pre] of [['accounts', 'a:'], ['sessions', 's:']]) {   // one storage key per account / session
+      const cur = this.core.data[m] || {};
+      for (const [id, v] of Object.entries(cur)) { const sk = pre + id, j = JSON.stringify(v); if (this.lastSaved.get(sk) !== j) { batch[sk] = v; sigs.push([sk, j]); } }
+      for (const sk of this.lastSaved.keys()) if (sk.startsWith(pre) && !(sk.slice(2) in cur)) dels.push(sk);
+    }
+    if (!sigs.length && !dels.length) return;
+    const st = this.state.storage, keys = Object.keys(batch);
+    for (let i = 0; i < keys.length; i += 100) { const part = {}; for (const k of keys.slice(i, i + 100)) part[k] = batch[k]; await st.put(part); }   // storage.put accepts at most 128 keys per call
+    for (let i = 0; i < dels.length; i += 100) await st.delete(dels.slice(i, i + 100));
     for (const [k, j] of sigs) this.lastSaved.set(k, j);
+    for (const k of dels) this.lastSaved.delete(k);
   }
 
   async fetch(request) {
@@ -111,7 +133,7 @@ export class GameServer {
     const id = crypto.randomUUID();
     const ip = request.headers.get('CF-Connecting-IP') || '';
     const conn = {
-      id, ws: server, admin: false,
+      id, ws: server, admin: false, ip,
       core: this.core.connect(id, (ev, data) => send(server, ev, data), { ip })
     };
     this.sockets.set(id, conn);
@@ -184,8 +206,11 @@ export class GameServer {
 
     try {
       if (ev === 'admin:auth') {
-        conn.admin = typeof d === 'string' && d === this.env.ADMIN_KEY;
-        if (conn.admin) send(conn.ws, 'admin:status', { ok: true });
+        const f = this.authFails.get(conn.ip) || { n: 0, until: 0 };
+        if (f.until > Date.now()) return reply(conn.ws, id, { ok: false, error: 'too_many_attempts' });
+        conn.admin = typeof d === 'string' && safeEq(d, this.env.ADMIN_KEY);
+        if (conn.admin) { this.authFails.delete(conn.ip); send(conn.ws, 'admin:status', { ok: true }); }
+        else { f.n++; if (f.n >= 6) { f.n = 0; f.until = Date.now() + 60000; } this.authFails.set(conn.ip, f); }
         return reply(conn.ws, id, { ok: conn.admin, error: conn.admin ? null : 'invalid_admin_key' });
       }
 
@@ -196,6 +221,10 @@ export class GameServer {
         else if (ev === 'admin:get') r = this.core.adminGet(d);
         else if (ev === 'admin:list') r = { ok: true, rooms: this.core.adminRooms() };
         else if (ev === 'admin:moderation') r = { ok: true, ...this.core.adminModeration() };
+        else if (ev === 'admin:log') r = this.core.adminLogGet();
+        else if (ev === 'admin:accounts') r = this.core.adminAccounts();
+        else if (ev === 'admin:account') { r = await this.core.adminAccount(d?.action, d?.value); durable = listChanged = true; }
+        else if (ev === 'admin:cmd') { r = this.core.adminCommand(d?.code, d?.line); durable = listChanged = true; }   // console: !hp ali 500, !map mirage ...
         else if (ev === 'admin:global') { r = this.core.adminGlobal(d?.action, d?.value); durable = true; }
         else if (ev === 'admin:server') {
           const v = d || {};
@@ -207,7 +236,7 @@ export class GameServer {
           durable = listChanged = true;
         } else if (ev === 'admin:room') {
           r = this.core.adminRoom(d?.code, d?.action, d?.value);
-          durable = ['bots', 'difficulty', 'max', 'weaponLimit'].includes(d?.action);
+          durable = ['bots', 'difficulty', 'max', 'weaponLimit', 'map'].includes(d?.action);
         } else r = { ok: false, error: 'bad_action' };
         // Server list / bans / settings must be on disk before we confirm, so a restart can never lose them.
         if (durable) await this.flush();

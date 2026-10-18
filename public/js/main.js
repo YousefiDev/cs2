@@ -8,6 +8,7 @@ import { Game } from './game.js';
 import { connectOnline, connectOffline } from './net.js';
 import { TouchEditor, normalizeLayout, applyLayout, setupGate } from './touchui.js';
 import { ServerBrowser, buildMapPicker, mapLabel } from './lobby.js';
+import { AuthUI } from './auth.js';
 
 const $ = (id) => document.getElementById(id);
 const FA = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
@@ -49,7 +50,8 @@ const hud = new HUD();
 game = new Game({ renderer, scene, camera, vmScene, vmCamera, sound, hud, settings, map, touch });
 game.onMap = (id) => { game.map = loadMap(id); };
 game.syncMaps = syncCustomMaps;   // so the vote / map switch know maps that were added after the page loaded
-game.onLeave = () => showLobby();
+const LEAVE_MSG = { logged_in_elsewhere: 'از دستگاه دیگری وارد حساب تو شدند', kicked: 'توسط ادمین از سرور بیرون انداخته شدی', banned: 'از این سرور بن شدی', account_deleted: 'حساب کاربری تو حذف شد' };
+game.onLeave = (reason) => { showLobby(); if (LEAVE_MSG[reason]) setStatus('bad', LEAVE_MSG[reason]); };
 game.onEnter = () => { $('lobby').hidden = true; $('settings').hidden = true; $('reconnect').hidden = true; if (touch) $('touch').hidden = false; };
 requestAnimationFrame(() => $('loading').classList.add('done'));
 
@@ -61,9 +63,11 @@ function showLobby() {
 }
 buildMapPicker(document.querySelector('.seg.maps'));
 const browser = new ServerBrowser({ onJoin: (code) => join(code) });
+// Accounts: username + password, unique player ID. The server says whether login is required (it is, online).
+const auth = new AuthUI({ call: (ev, d) => new Promise((res) => (net && net.connected() ? net.emit(ev, d, res) : res({ ok: false, error: 'disconnected' }))) });
 $('name').value = settings.name || '';
 $('name').addEventListener('input', () => { settings.name = $('name').value.trim().slice(0, 16); save(); });
-const playerName = () => (settings.name || $('name').value || 'Player' + Math.floor(Math.random() * 900 + 100)).trim();
+const playerName = () => (auth.account ? auth.account.nick : (settings.name || $('name').value || 'Player' + Math.floor(Math.random() * 900 + 100))).trim();
 document.querySelectorAll('.seg').forEach((seg) => {
   const key = seg.dataset.name; const btns = seg.querySelectorAll('button');
   const sync = () => btns.forEach((b) => b.classList.toggle('on', String(settings[key]) === b.dataset.v)); sync();
@@ -110,7 +114,11 @@ const sessionId = (() => { let v = localStorage.getItem('cs-session'); if (!v) {
 $('rc-leave').addEventListener('click', () => { rejoin = null; clearTimeout(rejoinTimer); game.cleanup(); showLobby(); });
 // Maps saved from the map editor live on the server; fetch them so the client builds exactly the same map the server runs.
 async function syncCustomMaps() { try { const r = await fetch('/api/maps/custom', { cache: 'no-store' }); if (r.ok) registerCustomMaps(await r.json()); } catch (e) {} }
-function hello() { return new Promise((res) => net.emit('hello', { name: playerName(), session: sessionId }, async (r) => { if (r && r.t && !net.offline) { game.offset = r.t - Date.now(); await syncCustomMaps(); } res(r); })); }
+function hello() { return new Promise((res) => net.emit('hello', { name: playerName(), session: sessionId }, async (r) => {
+  if (r && r.t && !net.offline) { game.offset = r.t - Date.now(); await syncCustomMaps(); }
+  if (r && r.auth && !net.offline) { auth.setRequired(r.auth.required); if (r.auth.account) auth.setAccount(r.auth.account); else await auth.resume(); }   // log in again after every (re)connect
+  res(r);
+})); }
 async function refreshRooms() {
   if ($('lobby').hidden) return;
   if (!net || net.offline || !net.connected()) { browser.setOffline('اتصال به سرور برقرار نیست…'); return; }
@@ -134,7 +142,8 @@ async function create(offline) {
 async function join(code) {
   sound.init(); sound.ui(); code = String(code || '').trim().toUpperCase(); if (!code) return;
   try { await ensureOnline(); } catch (e) { return; }
-  net.emit('join', { code, name: playerName(), session: sessionId }, (r) => { if (!r || !r.ok) setStatus('bad', r && r.error === 'Room not found' ? 'سروری با این کد پیدا نشد' : r && r.error === 'BANNED' ? 'از این سرور بن شده‌ای' : r && r.error === 'Room is full' ? 'سرور پر است' : 'ورود انجام نشد'); });
+  if (auth.required && !auth.account) { auth.open('login'); setStatus('bad', 'برای ورود به سرور اول وارد حساب کاربری شو'); return; }
+  net.emit('join', { code, name: playerName(), session: sessionId }, (r) => { if (r && r.error === 'LOGIN_REQUIRED') { auth.open('login'); return; } if (!r || !r.ok) setStatus('bad', r && r.error === 'Room not found' ? 'سروری با این کد پیدا نشد' : r && r.error === 'BANNED' ? 'از این سرور بن شده‌ای' : r && r.error === 'Room is full' ? 'سرور پر است' : 'ورود انجام نشد'); });
 }
 $('btn-create')?.addEventListener('click', () => create(false));
 $('btn-offline').addEventListener('click', () => create(true));

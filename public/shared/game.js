@@ -58,12 +58,15 @@ export class GameRoom {
       rankXp: 0, rankName: 'Recruit', rankTag:'R1', g: newNades(), gk: null, active: 3, hasBomb: false, lastShot: 0, shots: 0, reloadEnd: 0, drawEnd: 0, scoped: 0,
       hist: [], lastSt: 0, cid: 1, dmgBy: new Map(), action: null, deadAt: 0, youDirty: true, ai: bot ? newBrain() : null, joinedAt: Date.now(), ping: 0, noclip: false, god: false };
   }
+  // identity key: '#<player id>' for logged-in accounts (unique), lowercase name for guests
+  keyOf(p) { return p.key || String(p.name || '').toLowerCase(); }
   applyProfile(p) {
-    const key=String(p.name||'').toLowerCase(); const prof=this.profiles[key]||{}; const xp=Number(prof.xp)||0; const rr=rankForXp(xp);
+    const key=this.keyOf(p); const prof=this.profiles[key]||{}; const xp=Number(prof.xp)||0; const rr=rankForXp(xp);
     p.rankXp=xp; p.rankName=rr.name; p.rankTag=rr.tag;
     return p;
   }
-  refreshPlayerProfile(name) { const key=String(name||'').toLowerCase(); for(const p of this.players.values()) if(!p.bot && String(p.name).toLowerCase()===key){ this.applyProfile(p); p.youDirty=true; this.rosterDirty=true; } }
+  refreshPlayerProfile(name) { const key=String(name||'').toLowerCase(); for(const p of this.players.values()) if(!p.bot && this.keyOf(p).toLowerCase()===key){ this.applyProfile(p); p.youDirty=true; this.rosterDirty=true; } }
+  findPid(pid) { if (!pid) return null; for (const p of this.players.values()) if (!p.bot && p.pid === pid) return p; return null; }
   findSession(session) { if (!session) return null; for (const p of this.players.values()) if (!p.bot && p.session === session) return p; return null; }
   uniqueName(name) {
     const taken = new Set(this.humans().map((q) => String(q.name).toLowerCase())); if (!taken.has(String(name).toLowerCase())) return name;
@@ -92,19 +95,19 @@ export class GameRoom {
     this.players.clear(); this.drops.clear(); this.nades.clear(); this.smokes = []; this.fires = []; this.decoys = []; this.vote = null;
     this.phase = 'warmup'; this.phaseEnd = 0; this.round = 0; this.score = { T: 0, CT: 0 }; this.loss = { T: 0, CT: 0 }; this.bomb = { state: 'none' }; this.matchStartAt = 0; this.matchOver = false; this.rosterDirty = true;
   }
-  addHuman(id, name, session = '') {
+  addHuman(id, name, session = '', key = '', pid = '') {
     name = this.uniqueName(name);
-    const p = this.makePlayer(id, name, false); p.session = session; this.applyProfile(p); this.players.set(id, p);
+    const p = this.makePlayer(id, name, false); p.session = session; p.key = key || ''; p.pid = pid || ''; this.applyProfile(p); this.players.set(id, p);
     this.fillBots(); this.send(id, 'init', this.initPayload(id)); this.rosterDirty = true;
     this.broadcast('chat', { sys: true, msg: `${name} joined the server` }, id);
     return p;
   }
   initPayload(id) {
-    const pp=this.players.get(id); const key=String(pp?.name||'').toLowerCase(); const prof=this.profiles[key]||{}; const rr=rankForXp(Number(prof.xp)||0); return { code: this.code, title: this.title, map: this.mapId, you: id, phase: this.phase, phaseEnd: this.phaseEnd, round: this.round, score: this.score,
+    const pp=this.players.get(id); const key=pp?this.keyOf(pp):''; const prof=this.profiles[key]||{}; const rr=rankForXp(Number(prof.xp)||0); return { code: this.code, title: this.title, map: this.mapId, you: id, phase: this.phase, phaseEnd: this.phaseEnd, round: this.round, score: this.score,
       profile: {xp:Number(prof.xp)||0,rank:rr.name,rankTag:rr.tag}, roster: this.roster(), bomb: this.bombPublic(), drops: [...this.drops.values()], smokes: this.smokes, fires: this.fires.map(fireView), botMode: this.botMode, difficulty: this.difficulty, max: this.maxPlayers,
       perTeam: this.perTeam(), teamCaps: { T: this.perTeam('T'), CT: this.perTeam('CT') }, t: Date.now() };
   }
-  roster() { return this.list.map((p) => ({ id: p.id, name: p.name, team: p.team, bot: p.bot, k: p.k, d: p.d, a: p.a, alive: p.alive, hp: p.hp, armor: p.armor, money: p.money, ping: p.ping, bomb: p.hasBomb, noclip: !!p.noclip, god: !!p.god, xp:p.rankXp, rank:p.rankName, rankTag:p.rankTag, dc: !!p.dc })); }
+  roster() { return this.list.map((p) => ({ id: p.id, pid: p.pid || '', name: p.name, team: p.team, bot: p.bot, k: p.k, d: p.d, a: p.a, alive: p.alive, hp: p.hp, armor: p.armor, money: p.money, ping: p.ping, bomb: p.hasBomb, noclip: !!p.noclip, god: !!p.god, xp:p.rankXp, rank:p.rankName, rankTag:p.rankTag, dc: !!p.dc })); }
   removePlayer(id) {
     const p = this.players.get(id); if (!p) return;
     if (p.alive) this.dropAll(p);
@@ -176,7 +179,7 @@ export class GameRoom {
     let pt = null;
     for (let k = 0; k < pts.length; k++) { const c = pts[(this.spawnIdx[p.team] + k) % pts.length]; if (!taken.some((q) => Math.hypot(q.x - c.x, q.z - c.z) < 1.2)) { pt = c; this.spawnIdx[p.team] += k + 1; break; } }
     pt = pt || pts[(this.spawnIdx[p.team]++) % pts.length];
-    Object.assign(p, { alive: true, hp: 100, x: pt.x, y: pt.y, z: pt.z, vx: 0, vy: 0, vz: 0, onGround: true, crouch: false, yaw: pt.yaw, pitch: 0, shots: 0, action: null, reloadEnd: 0, scoped: 0 });
+    Object.assign(p, { alive: true, hp: p.maxHp || 100, x: pt.x, y: pt.y, z: pt.z, vx: 0, vy: 0, vz: 0, onGround: true, crouch: false, yaw: pt.yaw, pitch: 0, shots: 0, action: null, reloadEnd: 0, scoped: 0 });
     p.spawnX = pt.x; p.spawnZ = pt.z; p.hist = [{ t: Date.now(), x: p.x, y: p.y, z: p.z, c: false }];
     if (!p.w[2]) p.w[2] = newWeapon(defaultPistol(p.team));
     if (!p.w[3]) p.w[3] = newWeapon('knife');
@@ -353,7 +356,7 @@ export class GameRoom {
     if (this.bomb.defuser === v.id) this.bomb.defuser = null;
     let assist = null;
     if (a && a !== v) {
-      if (a.team !== v.team) { a.k++; a.money = Math.min(ECON.max, a.money + (WEAPONS[wk] ? WEAPONS[wk].reward : 300)); if(!a.bot) this.addXp(a.name, hs ? 120 : 100); this.applyProfile(a); }
+      if (a.team !== v.team) { a.k++; a.money = Math.min(ECON.max, a.money + (WEAPONS[wk] ? WEAPONS[wk].reward : 300)); if(!a.bot) this.addXp(this.keyOf(a), hs ? 120 : 100); this.applyProfile(a); }
       else { a.k--; a.money = Math.max(0, a.money - ECON.teamKillPenalty); }
       a.youDirty = true;
     }
@@ -750,32 +753,68 @@ export class GameRoom {
   }
   // ---------- admin controls ----------
   adminView(p) {
-    return { id: p.id, name: p.name, bot: !!p.bot, team: p.team, alive: !!p.alive,
-      hp: Math.round(p.hp), armor: Math.round(p.armor), money: Math.round(p.money), k: p.k, d: p.d, a: p.a, xp:p.rankXp, rank:p.rankName, rankTag:p.rankTag,
-      ping: p.ping, bomb: !!p.hasBomb, noclip: !!p.noclip, god: !!p.god, x: r2(p.x), y: r2(p.y), z: r2(p.z) };
+    const cur = p.w && p.w[p.active], mute = this.moderation?.mutes?.[this.keyOf(p)];
+    return { id: p.id, pid: p.pid || '', key: this.keyOf(p), name: p.name, bot: !!p.bot, team: p.team, alive: !!p.alive,
+      hp: Math.round(p.hp), maxHp: p.maxHp || 100, armor: Math.round(p.armor), helmet: !!p.helmet, kit: !!p.kit, money: Math.round(p.money), k: p.k, d: p.d, a: p.a, xp:p.rankXp, rank:p.rankName, rankTag:p.rankTag,
+      ping: p.ping, bomb: !!p.hasBomb, noclip: !!p.noclip, god: !!p.god, weapon: cur ? cur.k : null, muted: !!mute, x: r2(p.x), y: r2(p.y), z: r2(p.z) };
   }
   adminRoster() { return this.list.map((p) => this.adminView(p)); }
+  adminTeleport(p, x, y, z) { p.x = x; p.y = y; p.z = z; p.vx = 0; p.vy = 0; p.vz = 0; p.cid++; p.hist = [{ t: Date.now(), x, y, z, c: !!p.crouch }]; p.youDirty = true; this.send(p.id, 'spawn', { x, y, z, yaw: p.yaw, cid: p.cid }); }
+  // Resolves "@all @t @ct @spec @bots @humans @alive @dead", a player id, or (part of) a name. Returns {list} or {error}.
+  adminTargets(spec) {
+    const s = String(spec || '').trim(), low = s.toLowerCase(), L = this.list;
+    const groups = { '@all': () => L, '@t': () => L.filter((p) => p.team === 'T'), '@ct': () => L.filter((p) => p.team === 'CT'), '@spec': () => L.filter((p) => p.team === 'SPEC'),
+      '@bots': () => L.filter((p) => p.bot), '@humans': () => L.filter((p) => !p.bot), '@alive': () => L.filter((p) => p.alive), '@dead': () => L.filter((p) => !p.alive && p.team !== 'SPEC') };
+    if (groups[low]) return { list: groups[low](), group: true };
+    if (!s) return { error: 'target_required' };
+    if (this.players.has(s)) return { list: [this.players.get(s)] };
+    const exact = L.filter((p) => String(p.name).toLowerCase() === low); if (exact.length === 1) return { list: exact };
+    const part = L.filter((p) => String(p.name).toLowerCase().includes(low));
+    if (part.length === 1) return { list: part };
+    return { error: part.length ? 'ambiguous:' + part.map((p) => p.name).slice(0, 6).join(', ') : 'player_not_found' };
+  }
   adminSet(id, action, value) {
     const p = this.players.get(String(id)); if (!p) return { ok:false, error:'player_not_found' };
-    const n = Number(value);
+    const n = Number(value), now = Date.now();
     switch (action) {
-      case 'hp': p.hp = clamp(Number.isFinite(n) ? n : 100, 0, 100); p.alive = p.hp > 0; if (!p.alive) p.deadAt = Date.now(); break;
-      case 'armor': p.armor = clamp(Number.isFinite(n) ? n : 0, 0, 100); break;
-      case 'xp': { const x=clamp(Number(value)||0,0,999999); this.profiles[String(p.name).toLowerCase()] ||= {}; this.profiles[String(p.name).toLowerCase()].xp=x; this.applyProfile(p); this.saveData(); break; }
-      case 'give': { const k=String(value||''); if(!WEAPONS[k] || WEAPONS[k].nade || WEAPONS[k].melee) return {ok:false,error:'bad_weapon'}; p.w[WEAPONS[k].slot]=newWeapon(k); p.active=WEAPONS[k].slot; p.drawEnd=Date.now()+500; break; }
+      case 'hp': {   // any value up to 9999; above 100 it also becomes the player's max HP (kept on respawn) until set back to 100 or less
+        const v = clamp(Number.isFinite(n) ? Math.round(n) : 100, 0, 9999);
+        if (v <= 0) { if (p.alive) this.kill(p, null, 'knife', false); break; }
+        if (!p.alive) return { ok:false, error:'player_dead_use_respawn' };
+        p.hp = v; p.maxHp = v > 100 ? v : 0; break;
+      }
+      case 'armor': p.armor = clamp(Number.isFinite(n) ? n : 0, 0, 100); if (p.armor > 0 && value === 100) p.helmet = true; break;
+      case 'helmet': p.helmet = !!value; break;
+      case 'kit': p.kit = !!value; break;
+      case 'xp': { const x=clamp(Number(value)||0,0,999999); this.profiles[this.keyOf(p)] ||= {}; this.profiles[this.keyOf(p)].xp=x; this.applyProfile(p); this.saveData(); break; }
+      case 'give': {
+        const k = String(value || ''), w = WEAPONS[k]; if (!w || w.melee) return { ok:false, error:'bad_weapon' };
+        if (w.nade) { p.g[k] = Math.min(NADE_LIMIT, (p.g[k] || 0) + 1); break; }
+        p.w[w.slot] = newWeapon(k); p.active = w.slot; p.drawEnd = now + 500; p.reloadEnd = 0; break;
+      }
+      case 'refill': for (const sl of [1, 2, 6]) if (p.w[sl]) { const w = WEAPONS[p.w[sl].k]; p.w[sl].mag = w.mag || 0; p.w[sl].res = w.res || 0; } break;
+      case 'strip': p.w[1] = null; p.w[2] = null; p.w[6] = null; p.g = newNades(); p.active = 3; p.drawEnd = now + 400; p.reloadEnd = 0; break;
       case 'money': p.money = clamp(Number.isFinite(n) ? n : 0, 0, ECON.max); break;
       case 'team': return this.setTeam(p.id, String(value || 'SPEC'));
+      case 'swap': return this.setTeam(p.id, p.team === 'T' ? 'CT' : 'T');
       case 'noclip': p.noclip = !!value; break;
       case 'god': p.god = !!value; break;
-      case 'kill': if (p.alive) this.kill(p, null, 'knife', false); break;
+      case 'kill': case 'slay': if (p.alive) this.kill(p, null, 'knife', false); break;
+      case 'slap': {
+        if (!p.alive) return { ok:false, error:'player_dead' };
+        const dmg = clamp(Number.isFinite(n) ? n : 5, 0, 500);
+        if (!p.god) { if (p.hp <= dmg) { this.kill(p, null, 'knife', false); break; } p.hp -= dmg; }
+        this.adminTeleport(p, p.x, p.y + 0.5, p.z); break;      // little hop, like a SourceMod slap
+      }
       case 'respawn': if (p.team !== 'SPEC') { p.alive = false; this.spawn(p); } break;
+      case 'tpto': { const q = this.players.get(String(value)); if (!q || !q.alive || q === p) return { ok:false, error:'bad_target' }; this.adminTeleport(p, q.x + 0.9, q.y, q.z); break; }
       case 'teleport': {
         const q = value || {}; const x=Number(q.x), y=Number(q.y), z=Number(q.z);
         if (![x,y,z].every(Number.isFinite)) return {ok:false,error:'bad_position'};
-        p.x=x; p.y=y; p.z=z; p.cid++; p.hist=[{t:Date.now(),x,y,z,c:!!p.crouch}]; p.youDirty=true; this.send(p.id,'spawn',{x,y,z,yaw:p.yaw,cid:p.cid});
-        break;
+        this.adminTeleport(p, x, y, z); break;
       }
-      case 'mute': case 'gag': case 'silence': { const k=String(p.name).toLowerCase(); this.moderation.mutes ||= {}; if(value) this.moderation.mutes[k]={type:action,at:Date.now()}; else delete this.moderation.mutes[k]; this.saveData(); break; }
+      case 'mute': case 'gag': case 'silence': { const k=this.keyOf(p); this.moderation.mutes ||= {}; if(value) this.moderation.mutes[k]={type:action,at:now}; else delete this.moderation.mutes[k]; this.saveData(); break; }
+      case 'unmute': case 'ungag': { this.moderation.mutes ||= {}; delete this.moderation.mutes[this.keyOf(p)]; this.saveData(); break; }
       case 'kick': this.removePlayer(p.id); return {ok:true, kicked:true};
       default: return {ok:false,error:'bad_action'};
     }
@@ -785,12 +824,17 @@ export class GameRoom {
     switch (action) {
       case 'restart': this.startRound('Admin restarted the round'); return {ok:true};
       case 'newmatch': this.startMatch('Admin started a new match'); return {ok:true};
+      case 'map': { const id = String(value || ''); if (!MAP_DEFS[id]) return {ok:false,error:'bad_map'}; if (id !== this.mapId) this.changeMap(id); this.startMatch('Admin changed the map'); return {ok:true}; }
       case 'bots': this.botMode = value === 'none' ? 'none' : 'fill'; this.fillBots(); this.rosterDirty=true; return {ok:true};
       case 'difficulty': if (!['easy','normal','hard'].includes(value)) return {ok:false,error:'bad_difficulty'}; this.difficulty=value; return {ok:true};
       case 'max': this.maxPlayers=clamp(Number(value)||10,2,16); this.fillBots(); return {ok:true};
       case 'weaponLimit': { const v=value||{}; const k=String(v.weapon||''); if(!['awp','sg553','aug'].includes(k)) return {ok:false,error:'bad_weapon'}; this.weaponLimits[k]=clamp(Number(v.limit)||0,0,8); return {ok:true}; }
       case 'vote': { const v=value||{}; if(!['restart','mute','kick'].includes(String(v.kind||''))) return {ok:false,error:'bad_vote'}; return this.startVote(v.kind,v.value,'ADMIN'); }
       case 'say': { const msg=String(value||'').replace(/[<>]/g,'').slice(0,160); if(msg) this.broadcast('msg',{text:msg,sub:'ADMIN'}); return {ok:true}; }
+      case 'clean': this.drops.clear(); this.broadcast('drops', []); return {ok:true};
+      case 'healall': for (const p of this.list) if (p.alive) { p.hp = p.maxHp || 100; p.youDirty = true; } this.rosterDirty = true; return {ok:true};
+      case 'respawnall': for (const p of this.list) if (p.team !== 'SPEC') { p.alive = false; this.spawn(p); } return {ok:true};
+      case 'swapteams': for (const p of this.list) if (p.team === 'T' || p.team === 'CT') p.team = p.team === 'T' ? 'CT' : 'T'; this.startRound('Admin swapped the teams'); return {ok:true};
       default: return {ok:false,error:'bad_action'};
     }
   }
@@ -810,7 +854,7 @@ export class GameRoom {
       case 'team': { const r = this.setTeam(id, String(d && d.team)); if (ack) ack(r); return; }
       case 'chat': {
         const msg = String(d && d.msg || '').replace(/[<>]/g, '').slice(0, 120).trim(); if (!msg) return;
-        if (this.moderation?.mutes?.[String(p.name).toLowerCase()]) return; const pkt = { id, name: p.name, team: p.team, msg, teamOnly: !!(d && d.team), dead: !p.alive, chatColor:'gold' };
+        if (this.moderation?.mutes?.[this.keyOf(p)]) return; const pkt = { id, name: p.name, team: p.team, msg, teamOnly: !!(d && d.team), dead: !p.alive, chatColor:'gold' };
         if (pkt.teamOnly) this.teamcast(p.team, 'chat', pkt); else this.broadcast('chat', pkt); return;
       }
       case 'pingv': p.ping = clamp(d | 0, 0, 999); return;
