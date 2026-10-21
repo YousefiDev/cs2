@@ -171,3 +171,16 @@ body.ui-editing #touch .tc.ghost-hidden { filter: grayscale(1); }
 .ue-btns button.on { border-color: var(--m-accent); color: var(--m-accent); }
 .ue-btns .cta { background: var(--m-accent); border-color: var(--m-accent); color: #1a1008; }
 .ue-tip { text-align: center; font-size: 11px; color: var(--m-dim); }
+
+/* ---- voice chat on touch: mic button + who is talking ---- */
+body.is-touch #voicelist { left: var(--sl); top: calc(var(--st) + var(--radar) + 92px); }
+body.is-touch .vc-item { padding: 2px 8px 2px 6px; font-size: 11px; }
+body.is-touch #vc-ind { left: auto; right: auto; left: calc(50% - 74px); bottom: calc(var(--sb) + 62px); }
+#t-mic { --b: calc(var(--u) * 1.04); }
+body:not(.voice-on) #touch #t-mic { display: none; }
+#t-mic.vc-on { border-color: #4cd388; color: #bff5d4; }
+#t-mic.vc-tx { background: rgba(76, 211, 136, .42); border-color: #4cd388; box-shadow: 0 0 0 4px rgba(76, 211, 136, .25), 0 0 22px rgba(76, 211, 136, .55); animation: vcglow .7s infinite alternate; }
+#t-mic.vc-muted { color: #ff8c94; border-color: rgba(239, 93, 104, .7); }
+#t-mic.vc-denied { color: rgba(255, 255, 255, .4); border-color: rgba(239, 93, 104, .8); }
+#t-mic.vc-muted::after, #t-mic.vc-denied::after { content: ''; position: absolute; width: 58%; height: 2.5px; border-radius: 2px; background: #ff5a64; transform: rotate(-45deg); pointer-events: none; }
+@keyframes vcglow { to { box-shadow: 0 0 0 7px rgba(76, 211, 136, .12), 0 0 30px rgba(76, 211, 136, .7); } }

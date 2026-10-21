@@ -20,6 +20,7 @@ export class GameRoom {
     this.mapId = opts.map || 'dust2'; this.map = instanceMap(getMap(this.mapId)); this.nav = getNav(getMap(this.mapId));
     this.maxPlayers = clamp(opts.max | 0 || 10, 2, 16);
     this.botMode = opts.bots === 'none' ? 'none' : 'fill';
+    this.voiceMode = ['team', 'all', 'off'].includes(opts.voice) ? opts.voice : 'team';   // who can hear whom on voice chat
     this.difficulty = ['easy', 'normal', 'hard'].includes(opts.difficulty) ? opts.difficulty : 'normal';
     this.out = out; this.players = new Map(); this.profiles = opts.profiles || {}; this.addXp = opts.addXp || (()=>{}); this.moderation = opts.moderation || { mutes: {} }; this.saveData = opts.saveData || (()=>{}); this.drops = new Map(); this.dropSeq = 1;
     this.phase = 'warmup'; this.phaseEnd = 0; this.round = 0; this.score = { T: 0, CT: 0 }; this.loss = { T: 0, CT: 0 };
@@ -48,7 +49,7 @@ export class GameRoom {
   summary() {
     const h = this.humans();
     return { code: this.code, title: this.title, map: this.mapId, humans: h.length, bots: this.list.length - h.length, max: this.maxPlayers,
-      phase: this.phase, round: this.round, score: this.score, botMode: this.botMode, difficulty: this.difficulty,
+      phase: this.phase, round: this.round, score: this.score, botMode: this.botMode, voice: this.voiceMode, difficulty: this.difficulty,
       names: h.slice(0, 16).map((p) => p.name), teams: { T: this.team('T').length, CT: this.team('CT').length } };
   }
   makePlayer(id, name, bot) {
@@ -751,6 +752,22 @@ export class GameRoom {
     if(vals.length>=total){ const v=this.vote; this.vote=null; this.broadcast('msg',{text:'Vote failed',sub:v.kind.toUpperCase()}); }
     return {ok:true,passed:false};
   }
+  // ---------- voice chat: the server relays 60 ms ADPCM frames and decides who may hear them ----------
+  // team (default): living players talk to their team; dead / spectating players talk to each other.
+  // warm-up and the end-of-match vote are open to everybody. all: everybody hears everybody. off: no voice.
+  canHear(sp, li) {
+    if (this.voiceMode === 'all') return true;
+    if (this.phase === 'warmup' || (this.phase === 'over' && this.matchOver)) return true;
+    const liDead = !li.alive || li.team === 'SPEC';
+    if (sp.team === 'SPEC' || !sp.alive) return liDead;
+    return li.team === sp.team;
+  }
+  voiceFrame(p, d) {
+    if (this.voiceMode === 'off' || !d || typeof d.d !== 'string' || d.d.length < 16 || d.d.length > 2400 || !/^[A-Za-z0-9+/=]+$/.test(d.d)) return;
+    if (this.moderation?.mutes?.[this.keyOf(p)]) return;          // muted / gagged by an admin
+    const f = { f: p.id, s: d.s | 0, d: d.d };
+    for (const q of this.players.values()) if (!q.bot && q !== p && !q.dc && this.canHear(p, q)) this.send(q.id, 'voice', f);
+  }
   // ---------- admin controls ----------
   adminView(p) {
     const cur = p.w && p.w[p.active], mute = this.moderation?.mutes?.[this.keyOf(p)];
@@ -830,6 +847,7 @@ export class GameRoom {
       case 'max': this.maxPlayers=clamp(Number(value)||10,2,16); this.fillBots(); return {ok:true};
       case 'weaponLimit': { const v=value||{}; const k=String(v.weapon||''); if(!['awp','sg553','aug'].includes(k)) return {ok:false,error:'bad_weapon'}; this.weaponLimits[k]=clamp(Number(v.limit)||0,0,8); return {ok:true}; }
       case 'vote': { const v=value||{}; if(!['restart','mute','kick'].includes(String(v.kind||''))) return {ok:false,error:'bad_vote'}; return this.startVote(v.kind,v.value,'ADMIN'); }
+      case 'voice': if (!['team', 'all', 'off'].includes(value)) return {ok:false,error:'bad_mode'}; this.voiceMode = value; this.broadcast('msg', { text: 'Voice chat: ' + value, sub: 'ADMIN' }); return {ok:true};
       case 'say': { const msg=String(value||'').replace(/[<>]/g,'').slice(0,160); if(msg) this.broadcast('msg',{text:msg,sub:'ADMIN'}); return {ok:true}; }
       case 'clean': this.drops.clear(); this.broadcast('drops', []); return {ok:true};
       case 'healall': for (const p of this.list) if (p.alive) { p.hp = p.maxHp || 100; p.youDirty = true; } this.rosterDirty = true; return {ok:true};
@@ -852,6 +870,7 @@ export class GameRoom {
       case 'use': return this.use(p);
       case 'unuse': return this.unuse(p);
       case 'team': { const r = this.setTeam(id, String(d && d.team)); if (ack) ack(r); return; }
+      case 'voice': return this.voiceFrame(p, d);
       case 'chat': {
         const msg = String(d && d.msg || '').replace(/[<>]/g, '').slice(0, 120).trim(); if (!msg) return;
         if (this.moderation?.mutes?.[this.keyOf(p)]) return; const pkt = { id, name: p.name, team: p.team, msg, teamOnly: !!(d && d.team), dead: !p.alive, chatColor:'gold' };

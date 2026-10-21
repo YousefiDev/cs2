@@ -149,7 +149,7 @@ td{padding:8px;border-bottom:1px solid #18222f;vertical-align:middle}tr.pr{curso
           <div><label>محدودیت AWP / SG553 / AUG (۰ = بدون محدودیت)</label><div class="kv" style="margin:0"><div><input id="limAwp" type="number" min="0" max="8" placeholder="AWP"></div><div><input id="limSg" type="number" min="0" max="8" placeholder="SG"></div><div><input id="limAug" type="number" min="0" max="8" placeholder="AUG"></div><button id="limGo">ثبت</button></div></div>
           <div><label>پیام به همهٔ بازیکن‌ها</label><div class="kv" style="margin:0"><div><input id="sayIn" placeholder="Admin message"></div><button class="pri" id="sayGo">ارسال</button></div></div>
         </div>
-        <div class="row"><div><label>رأی‌گیری (Vote)</label><select id="voteKind"><option value="restart">Restart</option><option value="kick">Kick</option><option value="mute">Mute</option></select></div><div><label>بازیکن هدف (برای Kick/Mute)</label><select id="voteTarget"></select></div><button id="voteGo">شروع Vote</button></div>
+        <div class="row"><div><label>وویس چت</label><select id="voiceSel"><option value="team">فقط هم‌تیمی (پیش‌فرض)</option><option value="all">همه با همه</option><option value="off">خاموش</option></select></div><div><label>رأی‌گیری (Vote)</label><select id="voteKind"><option value="restart">Restart</option><option value="kick">Kick</option><option value="mute">Mute</option></select></div><div><label>بازیکن هدف (برای Kick/Mute)</label><select id="voteTarget"></select></div><button id="voteGo">شروع Vote</button></div>
       </div>
     </section>
 
@@ -271,8 +271,8 @@ function renderRooms(){
   const m=S.rooms.find(r=>r.code===S.cur);$('sStart').disabled=!m||m.enabled;$('sStop').disabled=!m||!m.enabled;$('sDel').disabled=!m;
   $('ctlTitle').textContent=m?`${m.title} · ${m.code} · ${m.map}${m.enabled?` · Round ${m.round||0}`:' · OFFLINE'}`:'یک سرور را انتخاب کن';
   document.querySelectorAll('.srv').forEach(x=>x.onclick=()=>pickServer(x.dataset.code));
-  for(const id of ['rRestart','rNew','rClean','rHeal','rResp','rSwap','mapGo','maxGo','limGo','sayGo','voteGo'])$(id).disabled=!m||!m.enabled;
-  if(m&&m.enabled){if(document.activeElement!==$('maxIn'))$('maxIn').value=m.max;if(document.activeElement!==$('diffSel'))$('diffSel').value=m.difficulty;document.querySelectorAll('#botSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===m.botMode));if(document.activeElement!==$('mapSel'))$('mapSel').value=m.map}
+  for(const id of ['rRestart','rNew','rClean','rHeal','rResp','rSwap','mapGo','maxGo','limGo','sayGo','voteGo','voiceSel'])$(id).disabled=!m||!m.enabled;
+  if(m&&m.enabled){if(document.activeElement!==$('maxIn'))$('maxIn').value=m.max;if(document.activeElement!==$('diffSel'))$('diffSel').value=m.difficulty;if(document.activeElement!==$('voiceSel'))$('voiceSel').value=m.voice||'team';document.querySelectorAll('#botSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===m.botMode));if(document.activeElement!==$('mapSel'))$('mapSel').value=m.map}
 }
 function pickServer(code){S.cur=code;S.sig='';S.players=[];S.sel=null;closeDrawer();renderRooms();loadRoom()}
 async function loadRoom(){if(!S.cur)return;const meta=S.rooms.find(x=>x.code===S.cur);if(meta&&!meta.enabled){S.players=[];renderPlayers();return}
@@ -355,7 +355,7 @@ const room=(action,value,ok)=>S.cur&&call('admin:room',{code:S.cur,action,value}
 $('rRestart').onclick=()=>room('restart');$('rNew').onclick=()=>confirm('مسابقهٔ جدید شروع شود؟')&&room('newmatch');$('rClean').onclick=()=>room('clean');$('rHeal').onclick=()=>room('healall');$('rResp').onclick=()=>room('respawnall');$('rSwap').onclick=()=>room('swapteams');
 $('mapGo').onclick=()=>confirm('مپ عوض شود و مسابقه از اول شروع شود؟')&&room('map',$('mapSel').value,'✓ مپ عوض شد');
 document.querySelectorAll('#botSeg button').forEach(b=>b.onclick=()=>room('bots',b.dataset.v));
-$('diffSel').onchange=()=>room('difficulty',$('diffSel').value);$('maxGo').onclick=()=>room('max',Number($('maxIn').value));
+$('diffSel').onchange=()=>room('difficulty',$('diffSel').value);$('voiceSel').onchange=()=>room('voice',$('voiceSel').value,'✓ وویس چت: '+$('voiceSel').value);$('maxGo').onclick=()=>room('max',Number($('maxIn').value));
 $('limGo').onclick=async()=>{for(const [id,w] of [['limAwp','awp'],['limSg','sg553'],['limAug','aug']]){const v=$(id).value;if(v!=='')await call('admin:room',{code:S.cur,action:'weaponLimit',value:{weapon:w,limit:Number(v)}})}toast('✓ محدودیت‌ها ثبت شد','ok')};
 $('sayGo').onclick=()=>{const m=$('sayIn').value.trim();if(m){room('say',m,'✓ ارسال شد');$('sayIn').value=''}};$('sayIn').onkeydown=e=>{if(e.key==='Enter')$('sayGo').click()};
 $('voteGo').onclick=()=>room('vote',{kind:$('voteKind').value,value:$('voteTarget').value},'✓ Vote شروع شد');

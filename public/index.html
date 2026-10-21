@@ -146,6 +146,7 @@
     <div class="tb-mid"><div id="timer">1:55</div><div id="round-no">ROUND 1</div><div id="bomb-ind" hidden>●</div></div>
     <div class="tb-team t"><div class="alive" id="al-t"></div><b id="sc-t">0</b></div>
   </div>
+  <div id="voicelist"></div><div id="vc-ind" hidden></div>
   <div id="killfeed"></div>
   <div id="money"><span>$</span><b id="money-v">800</b><em id="money-d"></em></div>
   <div id="buyzone" hidden>B · BUY</div>
@@ -197,6 +198,8 @@
       <h2>تنظیمات</h2>
       <button id="s-x" class="settings-close" type="button" aria-label="بستن تنظیمات" title="بستن">×</button>
     </div>
+    <div id="set-tabs" class="set-tabs"><button data-p="general" class="on">عمومی</button><button data-p="keys" id="tab-keys">کلیدها</button><button data-p="voice">وویس چت</button></div>
+    <div class="set-pane" data-pane="general">
     <label class="range"><span>حساسیت موس</span><input type="range" id="s-sens" min="0.2" max="4" step="0.05" /><b id="s-sens-v"></b></label>
     <label class="range"><span>زاویه دید (FOV)</span><input type="range" id="s-fov" min="60" max="100" step="1" /><b id="s-fov-v"></b></label>
     <label class="range"><span>صدا</span><input type="range" id="s-vol" min="0" max="1" step="0.05" /><b id="s-vol-v"></b></label>
@@ -209,6 +212,26 @@
       <label class="check"><input type="checkbox" id="s-gyro" /><span>ژیروسکوپ برای چرخاندن دوربین</span></label>
       <label class="range"><span>حساسیت لمس</span><input type="range" id="s-touch-sens" min="0.4" max="3" step="0.05" /><b id="s-touch-sens-v"></b></label>
       <div class="settings-actions"><button id="s-layout" class="ghost">✥ UI Editor · چیدمان دکمه‌ها</button></div>
+    </div>
+    </div>
+    <div class="set-pane" data-pane="keys" hidden>
+      <p class="set-note">روی هر دکمه بزن، بعد کلید (یا دکمهٔ موس) دلخواهت را فشار بده. هر عمل می‌تواند دو کلید داشته باشد.<br>Esc = لغو · Backspace = پاک‌کردن · اگر کلید برای عمل دیگری بود، از آن برداشته می‌شود.</p>
+      <div id="kb-list" class="kb-list"></div>
+      <p id="kb-msg" class="kb-msg"></p>
+      <div class="settings-actions"><button id="kb-reset" class="ghost" type="button">بازگشت همهٔ کلیدها به پیش‌فرض</button></div>
+    </div>
+    <div class="set-pane" data-pane="voice" hidden>
+      <label class="check"><input type="checkbox" id="vc-on" /><span>وویس چت فعال باشد</span></label>
+      <div class="seg" data-name="voiceMode"><button data-v="ptt">نگه‌داشتن کلید</button><button data-v="toggle">کلید روشن/خاموش</button><button data-v="open">میکروفون باز</button></div>
+      <p id="vc-mode-note" class="set-note"></p>
+      <label class="range"><span>حساسیت میکروفون (حالت باز)</span><input type="range" id="vc-sens" min="-60" max="-20" step="1" /><b id="vc-sens-v"></b></label>
+      <label class="range"><span>بلندی میکروفون من</span><input type="range" id="vc-mic" min="0" max="2" step="0.05" /><b id="vc-mic-v"></b></label>
+      <label class="range"><span>بلندی صدای بقیه</span><input type="range" id="vc-vol" min="0" max="2" step="0.05" /><b id="vc-vol-v"></b></label>
+      <label class="field"><span>میکروفون</span><select id="vc-dev"></select></label>
+      <div class="vc-test"><button id="vc-test" class="ghost" type="button">تست میکروفون</button><div class="vc-meter"><i id="vc-meter"></i></div></div>
+      <p id="vc-status" class="set-note"></p>
+      <h3 class="vc-h">بازیکن‌های همین سرور</h3>
+      <div id="vc-players" class="vc-players"><p class="set-note">وارد یک سرور که شوی، اینجا می‌توانی صدای هر بازیکن را قطع یا کم و زیاد کنی.</p></div>
     </div>
     <div class="settings-actions settings-bottom">
       <button id="s-dismiss" class="ghost" type="button">بستن</button>
@@ -232,6 +255,7 @@
   <button id="t-score" class="tb tc" aria-label="Scoreboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg></button>
   <button id="t-buy" class="tb tc" aria-label="Buy"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/><path d="M3 4h3l2.4 10.5h9.6L20 7H7"/></svg></button>
   <button id="t-chat" class="tb tc" aria-label="Chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v11H10l-4.5 4v-4H4z"/></svg></button>
+  <button id="t-mic" class="tb tc" aria-label="Voice chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg></button>
   <button id="t-pause" class="tb tc" aria-label="Menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5v13M15 5.5v13"/></svg></button>
 </section>
 

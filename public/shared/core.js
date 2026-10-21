@@ -24,7 +24,7 @@ const PW_ITER = 100000, SESSION_MS = 30 * 24 * 3600 * 1000;
 const CTRL = /[<>\x00-\x1f]/g;
 const cleanName = (v) => String(v || '').replace(CTRL, '').trim().slice(0, 16) || 'Player';
 const makeCode = () => { const c = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 4; i++) s += c[Math.floor(Math.random() * c.length)]; return s; };
-const LIMITS = { st: 70, shot: 25 };
+const LIMITS = { st: 70, shot: 25, voice: 35 };   // voice: 60 ms frames = ~17 per second
 
 export class ServerCore {
   constructor(opts = {}) {
@@ -71,7 +71,7 @@ export class ServerCore {
   list() { return [...this.rooms.values()].map((r) => r.summary()).sort((a, b) => b.humans - a.humans); }
   makeRoomConfig(d = {}, code = null) { const c = code || makeCode(); return { code:c, title:cleanName(d.title || 'Community Server').slice(0,24), map:MAP_DEFS[d.map] ? d.map : 'dust2', bots:d.bots === 'none' ? 'none' : 'fill', difficulty:['easy','normal','hard'].includes(d.difficulty) ? d.difficulty : 'normal', max:Math.max(2, Math.min(16, Number(d.max)||10)), weaponLimits:{awp:0,sg553:0,aug:0}, enabled:true, createdAt:Date.now() }; }
   bootRoom(cfg) { if (!cfg || !cfg.enabled || this.rooms.has(cfg.code)) return null; try { return this.bootRoomUnsafe(cfg); } catch (e) { console.error('[boot]', cfg.code, cfg.map, e && e.message); if (cfg.map !== 'dust2') { try { return this.bootRoomUnsafe({ ...cfg, map: 'dust2' }); } catch (e2) { console.error('[boot-fallback]', e2 && e2.message); } } return null; } }
-  bootRoomUnsafe(cfg) { const room = new GameRoom({ code:cfg.code, map:cfg.map, title:cfg.title, bots:cfg.bots, difficulty:cfg.difficulty, max:cfg.max, weaponLimits:{...(this.data.settings?.weaponLimits||{}), ...(cfg.weaponLimits||{})}, profiles:this.data.profiles, moderation:this.data, saveData:()=>this.saveData(), addXp:(key,n)=>this.addXp(key,n) }, this.out); this.rooms.set(cfg.code, room); return room; }
+  bootRoomUnsafe(cfg) { const room = new GameRoom({ code:cfg.code, map:cfg.map, title:cfg.title, bots:cfg.bots, difficulty:cfg.difficulty, voice:cfg.voice, max:cfg.max, weaponLimits:{...(this.data.settings?.weaponLimits||{}), ...(cfg.weaponLimits||{})}, profiles:this.data.profiles, moderation:this.data, saveData:()=>this.saveData(), addXp:(key,n)=>this.addXp(key,n) }, this.out); this.rooms.set(cfg.code, room); return room; }
   loadManagedRooms() { for (const cfg of Object.values(this.data.servers || {})) if (cfg.enabled) this.bootRoom(cfg); }
   ensureDefaultServers(list) {
     // First boot: create public servers so friends can join right away without opening the admin panel.
@@ -304,7 +304,7 @@ export class ServerCore {
     if (!r) return {ok:false,error:'room_not_found'};
     const result=r.adminRoom(action,value);
     if (result.ok && cfg) {
-      cfg.max=r.maxPlayers; cfg.difficulty=r.difficulty; cfg.bots=r.botMode; cfg.weaponLimits={...r.weaponLimits}; cfg.map=r.mapId;
+      cfg.max=r.maxPlayers; cfg.difficulty=r.difficulty; cfg.bots=r.botMode; cfg.weaponLimits={...r.weaponLimits}; cfg.map=r.mapId; cfg.voice=r.voiceMode;
       this.saveData();
     }
     if (result.ok) this.logAdmin(key,`room ${action}${value!==undefined&&typeof value!=='object'?' = '+String(value).slice(0,40):''}`);

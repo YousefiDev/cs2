@@ -8,6 +8,7 @@ import { makeSoldier, setRigWeapon, animateRig, makeGun, makeViewArms } from './
 import * as TX from './textures.js';
 import { radio } from './audio.js';
 import { MapVote } from './mapvote.js';
+import { Keybinds } from './keybinds.js';
 
 const INTERP = 100;
 const $ = (id) => document.getElementById(id);
@@ -17,6 +18,7 @@ const TEAMNAME = { T: 'Terrorists', CT: 'Counter-Terrorists' };
 export class Game {
   constructor(ctx) {
     Object.assign(this, ctx);
+    if (!this.binds) this.binds = new Keybinds(this.settings || {}, () => {});   // rebindable keys (settings > کلیدها)
     this.remotes = new Map(); this.dropMeshes = new Map(); this.nadeMeshes = new Map(); this.smokeFx = new Map(); this.fireFx = new Map(); this.blind = 0; this.blindMax = 0; this.effects = []; this.decals = []; this.decalIdx = 0;
     this.keys = {}; this.mouseL = false; this.inRoom = false; this.offset = 0; this.rtt = 0;
     this.roster = []; this.rosterMap = new Map(); this.score = { T: 0, CT: 0 }; this.round = 0; this.phase = 'warmup'; this.phaseEnd = 0; this.liveStart = 0;
@@ -34,7 +36,7 @@ export class Game {
     const on = (ev, f) => net.on(ev, f.bind(this));
     on('init', this.onInit); on('roster', this.onRoster); on('snap', this.onSnap); on('you', this.onYou); on('spawn', this.onSpawn); on('correct', this.onCorrect);
     on('round', this.onRound); on('bomb', this.onBomb); on('drops', this.onDrops); on('fx', this.onFx); on('hit', this.onHit); on('hurt', this.onHurt);
-    on('mapvote', this.onMapVote); on('mapchange', this.onMapChange); on('kill', this.onKill); on('profile', this.onProfile); on('vote', this.onVote); on('act', this.onAct); on('boom', this.onBoom); on('smokes', this.onSmokes); on('fires', this.onFires);
+    on('voice', this.onVoiceMsg); on('mapvote', this.onMapVote); on('mapchange', this.onMapChange); on('kill', this.onKill); on('profile', this.onProfile); on('vote', this.onVote); on('act', this.onAct); on('boom', this.onBoom); on('smokes', this.onSmokes); on('fires', this.onFires);
     on('server:closed', this.onServerClosed); on('msg', (d) => this.hud.center(d.text, d.sub || '', '', 2600)); on('chat', (d) => this.hud.chat(d));
     if (!net.offline) { clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.ping(), 2000); this.ping(); }
   }
@@ -49,7 +51,7 @@ export class Game {
   serverNow() { return Date.now() + this.offset; }
   onInit(d) {
     if (!this.net.offline && !this.pingTimer) { this.pingTimer = setInterval(() => this.ping(), 2000); this.ping(); }
-    this.room = d; this.meId = d.you; this.inRoom = true; this.score = d.score; this.round = d.round; this.phase = d.phase; this.phaseEnd = d.phaseEnd;
+    this.room = d; this.meId = d.you; this.inRoom = true; if (this.voice) { this.voice.setRoom(true, !!this.net.offline); this.voice.arm(); } this.score = d.score; this.round = d.round; this.phase = d.phase; this.phaseEnd = d.phaseEnd;
     if (!this.offsetInit && this.net.offline) this.offset = 0; else if (!this.offsetInit) this.offset = d.t - Date.now();
     this.onRoster(d.roster); this.rankProfile = d.profile || null; this.onBomb(d.bomb); this.onDrops(d.drops); this.onSmokes(d.smokes || []); this.onFires(d.fires || []); this.alive = false; this.you = null;
     this.onMap && this.onMap(d.map); this.hud.show(true); this.hud.buildRadar(this.map); $('p-code').textContent = `SERVER ${d.code}`; $('ts-room').textContent = `${d.title} · ${d.code}`;
@@ -191,7 +193,7 @@ export class Game {
     this.you = d; this.team = d.tm;
     this.hud.lastNades = d.g || {};
     if (!d.al && this.alive) this.die(null);
-    if (d.act?.type !== 'plant' && this.s.crouch && !this.keys.KeyC && !this.keys.ControlLeft && !this.touchCrouch) this.s.crouch = false;
+    if (d.act?.type !== 'plant' && this.s.crouch && !this.act('crouch') && !this.touchCrouch) this.s.crouch = false;
     if (d.rl > 0 && !this.reloadUntil) this.reloadUntil = now + d.rl;
     if (!d.rl && this.reloadUntil && now > this.reloadUntil - 50) this.reloadUntil = 0;
     this.hud.setVitals(d); this.rankProfile=d; this.updateRankHud();
@@ -257,6 +259,7 @@ export class Game {
     if (this.specId === e.v) this.specSwitchAt = performance.now() + 1800;
   }
   // ---- end of match: winner screen + map vote (server sends: mapvote start/tally/result, then mapchange) ----
+  onVoiceMsg(m) { if (this.voice) this.voice.onVoice(m); }
   onMapVote(d) {
     if (!this.mapVoteUI) this.mapVoteUI = new MapVote((map) => this.net.emit('mapvote:cast', { map }), () => this.serverNow());
     if (d.kind === 'start') {
@@ -316,7 +319,7 @@ export class Game {
     this.cleanup(); this.onLeave && this.onLeave();
   }
   cleanup() {
-    clearInterval(this.pingTimer); this.pingTimer = null;
+    clearInterval(this.pingTimer); this.pingTimer = null; if (this.voice) this.voice.setRoom(false);
     this._modal = false; document.body.classList.remove('ui-modal'); this.mapVoteUI && this.mapVoteUI.hide();
     this.inRoom = false; this.alive = false; this.you = null; this.room = null; this.closeMenus(); document.exitPointerLock?.();
     for (const id of [...this.remotes.keys()]) this.removeRemote(id);
@@ -375,20 +378,21 @@ export class Game {
     const planting = this.you?.act?.type === 'plant';
     if (planting) s.crouch = true;
     let f = 0, r = 0;
-    if (this.canMove()) { f = (k.KeyW ? 1 : 0) - (k.KeyS ? 1 : 0); r = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0); if (this.touchMove) { f += this.touchMove.f; r += this.touchMove.r; } }
+    const aJump = this.act('jump') || this.touchJump, aCrouch = this.act('crouch') || this.touchCrouch, aWalk = this.act('walk');
+    if (this.canMove()) { f = (this.act('forward') ? 1 : 0) - (this.act('back') ? 1 : 0); r = (this.act('right') ? 1 : 0) - (this.act('left') ? 1 : 0); if (this.touchMove) { f += this.touchMove.f; r += this.touchMove.r; } }
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     const wx = -sy * f + cy * r, wz = -cy * f - sy * r;
     let speed = (w && w.speed) || 6.35; if (this.scope && w && w.scopedSpeed) speed = w.scopedSpeed;
     if (this.you?.nc) {
-      const v = (k.ShiftLeft || k.ShiftRight) ? speed * 1.8 : speed * 1.35;
+      const v = aWalk ? speed * 1.8 : speed * 1.35;
       s.x += wx * v * dt; s.z += wz * v * dt;
-      if (k.Space || this.touchJump) s.y += v * dt;
-      if (k.ControlLeft || k.KeyC || this.touchCrouch) s.y -= v * dt;
-      s.vx = wx * v; s.vz = wz * v; s.vy = ((k.Space || this.touchJump) ? v : 0) - ((k.ControlLeft || k.KeyC || this.touchCrouch) ? v : 0);
+      if (aJump) s.y += v * dt;
+      if (aCrouch) s.y -= v * dt;
+      s.vx = wx * v; s.vz = wz * v; s.vy = (aJump ? v : 0) - (aCrouch ? v : 0);
       s.onGround = false; s.crouch = false;
     } else {
       const steps = Math.ceil(dt / 0.017), h = dt / steps;
-      for (let i = 0; i < steps; i++) stepMove(this.map, s, { wx, wz, jump: (k.Space || this.touchJump) && this.canMove(), crouch: (k.KeyC || k.ControlLeft || this.touchCrouch) && this.alive, walk: k.ShiftLeft || k.ShiftRight, speed }, h);
+      for (let i = 0; i < steps; i++) stepMove(this.map, s, { wx, wz, jump: aJump && this.canMove(), crouch: aCrouch && this.alive, walk: aWalk, speed }, h);
     }
     if (s.landed) { s.landed = false; this.sound.step(null, 0.5); }
     const hs = Math.hypot(s.vx, s.vz);
@@ -706,11 +710,13 @@ export class Game {
   closeChat() { this.chatOpen = false; const i = $('chat-in'), send = $('chat-send'); i.hidden = true; if (send) send.hidden = true; i.value = ''; i.blur(); $('chat').classList.remove('open'); }
   sendChat() { const v = $('chat-in')?.value.trim(); if (v) this.net.emit('chat', { msg: v, team: this.chatTeam }); this.closeChat(); }
   // ---------------- input ----------------
+  act(id) { return this.binds.isDown(id, this.keys); }                       // is a bound key / mouse button of this action held?
   onKeyDown(e) {
     if (!this.inRoom) return;
     if (this.chatOpen) { if (e.code === 'Enter') { e.preventDefault(); this.sendChat(); } else if (e.code === 'Escape') this.closeChat(); return; }
-    if (!$('teamsel').hidden || !$('settings').hidden) return;
-    if (e.code === 'Tab') { e.preventDefault(); this.sbOpen = true; this.hud.scoreboard(true, this.roster, this.meId, this.score, this.room); return; }
+    if (!$('teamsel').hidden || !$('settings').hidden || !$('mapvote').hidden) return;
+    const acts = this.binds.actionsFor(e.code);
+    if (acts.includes('scoreboard')) { e.preventDefault(); this.sbOpen = true; this.hud.scoreboard(true, this.roster, this.meId, this.score, this.room); return; }
     if (e.repeat) return;
     if (this.buyOpen) {
       const dm = /^(Digit|Numpad)(\d)$/.exec(e.code);
@@ -718,39 +724,61 @@ export class Game {
       if (e.code === 'Backspace') { e.preventDefault(); this.hud.buyBack(); return; }
     }
     this.keys[e.code] = true;
-    switch (e.code) {
-      case 'KeyB': this.toggleBuy(); break;
-      case 'Escape': if (this.buyOpen) { if (!this.hud.buyBack()) this.toggleBuy(false); } break;
-      case 'KeyY': e.preventDefault(); this.openChat(false); break;
-      case 'KeyU': e.preventDefault(); this.openChat(true); break;
-      case 'Digit1': this.switchSlot(1); break; case 'Digit2': this.switchSlot(2); break; case 'Digit3': this.switchSlot(3); break; case 'Digit4': this.switchSlot(4); break; case 'Digit5': this.switchSlot(5); break; case 'Digit6': this.switchSlot(6); break;
-      case 'KeyQ': if (this.lastSlot) this.switchSlot(this.lastSlot); break;
-      case 'KeyR': this.reload(); break;
-      case 'KeyG': if (this.alive) { this.net.emit('drop'); this.sound.click(0.2, 900); } break;
-      case 'KeyE': if (this.alive) this.net.emit('use'); break;
-      // C/Control are crouch keys and must not toggle spectator camera.
-      // Spectator camera toggle uses V so C+W/Ctrl+W stays a movement chord.
-      case 'KeyV': if (!this.alive) this.specMode = this.specMode === 'fp' ? 'tp' : 'fp'; break;
-      case 'ControlLeft': case 'ControlRight': case 'KeyC': this.s.crouch = !!this.alive; break;
-      case 'KeyM': this.openTeamSelect(); break;
-      case 'F3': if(this.activeVote) this.net.emit('vote:cast',{yes:true}); break;
-      case 'F4': if(this.activeVote) this.net.emit('vote:cast',{yes:false}); break;
-      case 'Space': if (!this.alive) this.specNext(1); break;
-    }
+    if (e.code === 'Escape') { if (this.buyOpen) { if (!this.hud.buyBack()) this.toggleBuy(false); } return; }
+    for (const a of acts) this.doAction(a, true, e);
   }
   onKeyUp(e) {
     this.keys[e.code] = false;
-    if ((e.code === 'ControlLeft' || e.code === 'ControlRight' || e.code === 'KeyC') && !this.keys.ControlLeft && !this.keys.ControlRight && !this.keys.KeyC) this.s.crouch = false;
-    if (e.code === 'Tab') { this.sbOpen = false; this.hud.scoreboard(false); }
-    if (e.code === 'KeyE' && this.inRoom) this.net.emit('unuse');
+    for (const a of this.binds.actionsFor(e.code)) this.doAction(a, false, e);
+  }
+  // down = key / button pressed, !down = released. `acts` come from the player's bindings (settings > کلیدها).
+  doAction(a, down, e) {
+    if (down) {
+      switch (a) {
+        case 'buy': this.toggleBuy(); break;
+        case 'chatAll': e && e.preventDefault(); this.openChat(false); break;
+        case 'chatTeam': e && e.preventDefault(); this.openChat(true); break;
+        case 'slot1': this.switchSlot(1); break; case 'slot2': this.switchSlot(2); break; case 'slot3': this.switchSlot(3); break;
+        case 'slot4': this.switchSlot(4); break; case 'slot5': this.switchSlot(5); break; case 'slot6': this.switchSlot(6); break;
+        case 'lastWeapon': if (this.lastSlot) this.switchSlot(this.lastSlot); break;
+        case 'reload': this.reload(); break;
+        case 'drop': if (this.alive) { this.net.emit('drop'); this.sound.click(0.2, 900); } break;
+        case 'use': if (this.alive) this.net.emit('use'); break;
+        case 'spec': if (!this.alive) this.specMode = this.specMode === 'fp' ? 'tp' : 'fp'; break;       // spectator camera (default V, so C/Ctrl+W stay a movement chord)
+        case 'crouch': this.s.crouch = !!this.alive; break;
+        case 'team': this.openTeamSelect(); break;
+        case 'voteYes': if (this.activeVote) this.net.emit('vote:cast', { yes: true }); break;
+        case 'voteNo': if (this.activeVote) this.net.emit('vote:cast', { yes: false }); break;
+        case 'jump': if (!this.alive) this.specNext(1); break;
+        case 'voice': this.voice && this.voice.press(); break;
+        case 'fire': if (!this.locked) break; this.mouseL = true; if (!this.alive) this.specNext(1); break;
+        case 'alt':
+          if (!this.locked) break;
+          if (this.alive && this.you && this.you.a === 4) { this.mouseR = true; this.throwNade(performance.now(), this.mouseL ? 0.5 : 0); }
+          else if (this.alive && this.activeW()?.melee) { this.mouseR = true; this.tryFire(performance.now(), true); }
+          else if (this.alive) this.toggleScope(); else this.specNext(-1);
+          break;
+      }
+    } else {
+      switch (a) {
+        case 'crouch': if (!this.act('crouch') && !this.touchCrouch) this.s.crouch = false; break;
+        case 'scoreboard': this.sbOpen = false; this.hud.scoreboard(false); break;
+        case 'use': if (this.inRoom) this.net.emit('unuse'); break;
+        case 'fire': this.mouseL = false; break;
+        case 'alt': this.mouseR = false; break;
+        case 'voice': this.voice && this.voice.release(); break;
+      }
+    }
   }
   onMouseDown(e) {
-    if (!this.inRoom) return;
-    if (!this.locked) return;
-    if (e.button === 0) { this.mouseL = true; if (!this.alive) this.specNext(1); }
-    if (e.button === 2) { if (this.alive && this.you && this.you.a === 4) { this.mouseR = true; this.throwNade(performance.now(), this.mouseL ? 0.5 : 0); } else if (this.alive && this.activeW()?.melee) { this.mouseR = true; this.tryFire(performance.now(), true); } else if (this.alive) this.toggleScope(); else this.specNext(-1); }
+    if (!this.inRoom || !this.locked) return;
+    const code = 'Mouse' + e.button; this.keys[code] = true;
+    for (const a of this.binds.actionsFor(code)) this.doAction(a, true, e);
   }
-  onMouseUp(e) { if (e.button === 0) this.mouseL = false; if (e.button === 2) this.mouseR = false; }
+  onMouseUp(e) {
+    const code = 'Mouse' + e.button; this.keys[code] = false;
+    for (const a of this.binds.actionsFor(code)) this.doAction(a, false, e);
+  }
   onMouseMove(e) {
     if (!this.locked || !this.alive) return; const k = 0.0022 * this.settings.sens * (this.scope ? this.camera.fov / this.settings.fov : 1);
     this.yaw -= e.movementX * k; this.pitch = clamp(this.pitch - e.movementY * k, -1.53, 1.53);

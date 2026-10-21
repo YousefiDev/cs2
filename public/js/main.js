@@ -9,12 +9,16 @@ import { connectOnline, connectOffline } from './net.js';
 import { TouchEditor, normalizeLayout, applyLayout, setupGate } from './touchui.js';
 import { ServerBrowser, buildMapPicker, mapLabel } from './lobby.js';
 import { AuthUI } from './auth.js';
+import { Keybinds, ACTIONS, GROUPS, codeLabel, RESERVED } from './keybinds.js';
+import { VoiceChat } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
 const FA = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 const DEF = { map: 'dust2', name: '', sens: 1.2, touchSens: 1, gyro: false, fov: 74, vol: 0.7, ch: 6, chcolor: '#3cff6f', quality: 'high', radio: 'on', bots: 'fill', difficulty: 'normal', max: '10', touchLayout: {} };
 const settings = Object.assign({}, DEF, JSON.parse(localStorage.getItem('cs-dust2') || '{}'));
 const save = () => localStorage.setItem('cs-dust2', JSON.stringify(settings));
+for (const [k, v] of Object.entries({ voiceOn: true, voiceMode: 'ptt', voiceSens: -42, voiceMic: 1, voiceVol: 1, voiceDev: '', voiceMuted: {}, voiceVols: {}, keys: {} })) if (settings[k] === undefined) settings[k] = v;
+const binds = new Keybinds(settings, save);   // rebindable keys (settings > کلیدها)
 const isMobile = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
@@ -47,7 +51,9 @@ let game = null;
 const map = loadMap(['dust2', 'mirage', 'inferno', 'warehouse', 'bazaar', 'arena'].includes(settings.map) ? settings.map : 'dust2');
 const sound = new Sound(); sound.setVolume(settings.vol);
 const hud = new HUD();
-game = new Game({ renderer, scene, camera, vmScene, vmCamera, sound, hud, settings, map, touch });
+// Voice chat: mic -> server -> teammates. nameOf() lets it find the speaker's name / account ID from the roster.
+const voice = new VoiceChat({ settings, send: (ev, d) => { if (net && !net.offline && net.connected()) net.emit(ev, d); }, nameOf: (id) => (game && game.roster ? game.roster.find((r) => r.id === id) || null : null), onState: (s) => setMicUI(s), onError: (e) => { if (game) game.hud.toast(micErr(e)); } });
+game = new Game({ renderer, scene, camera, vmScene, vmCamera, sound, hud, settings, map, touch, binds, voice });
 game.onMap = (id) => { game.map = loadMap(id); };
 game.syncMaps = syncCustomMaps;   // so the vote / map switch know maps that were added after the page loaded
 const LEAVE_MSG = { logged_in_elsewhere: 'از دستگاه دیگری وارد حساب تو شدند', kicked: 'توسط ادمین از سرور بیرون انداخته شدی', banned: 'از این سرور بن شدی', account_deleted: 'حساب کاربری تو حذف شد' };
@@ -183,12 +189,12 @@ function applyQuality() {
 }
 function applySettings() {
   const r = document.documentElement.style; r.setProperty('--ch', settings.chcolor); r.setProperty('--chs', settings.ch + 'px');
-  sound.setVolume(+settings.vol); settings.sens = +settings.sens; settings.fov = +settings.fov; settings.radio = settings.radio !== 'off';
+  sound.setVolume(+settings.vol); voice.applySettings(); updateModeNote(); settings.sens = +settings.sens; settings.fov = +settings.fov; settings.radio = settings.radio !== 'off';
   camera.fov = settings.fov; camera.updateProjectionMatrix();
   applyQuality();
 }
 function openSettings() {
-  $('settings').hidden = false;
+  $('settings').hidden = false; $('tab-keys').hidden = touch; setSetTab('general');
   for (const [id, key, f] of [['s-sens', 'sens', (v) => (+v).toFixed(2)], ['s-fov', 'fov', (v) => v + '°'], ['s-vol', 'vol', (v) => Math.round(v * 100) + '%'], ['s-ch', 'ch', (v) => v]]) {
     const el = $(id); el.value = settings[key]; $(id + '-v').textContent = f(settings[key]); el.oninput = () => { settings[key] = +el.value; $(id + '-v').textContent = f(el.value); save(); applySettings(); };
   }
@@ -198,7 +204,7 @@ function openSettings() {
 $('btn-settings').addEventListener('click', openSettings);
 $('s-layout').addEventListener('click', () => { $('settings').hidden = true; openEditor(); });
 const closeSettings = (saveChanges = true) => {
-  $('settings').hidden = true;
+  $('settings').hidden = true; stopVoiceTest(); cancelCapture(); clearInterval(vcPlayersT);
   if (saveChanges) save();
   applySettings();
   // Settings can be opened from the pause screen. That screen leaves
@@ -213,6 +219,93 @@ $('s-close').addEventListener('click', () => closeSettings(true));
 $('s-dismiss').addEventListener('click', () => closeSettings(true));
 $('s-x').addEventListener('click', () => closeSettings(true));
 applySettings();
+// ---------- settings: tabs, key bindings, voice chat ----------
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+document.querySelectorAll('#set-tabs button').forEach((b) => b.addEventListener('click', () => setSetTab(b.dataset.p)));
+function setSetTab(p) {
+  document.querySelectorAll('#set-tabs button').forEach((x) => x.classList.toggle('on', x.dataset.p === p));
+  document.querySelectorAll('.set-pane').forEach((x) => { x.hidden = x.dataset.pane !== p; });
+  cancelCapture(); if (p === 'keys') renderKeys(); if (p === 'voice') openVoicePane(); else { stopVoiceTest(); clearInterval(vcPlayersT); }
+}
+// --- key bindings: click a key box, press the new key (or a mouse button) ---
+let capturing = null;
+function renderKeys() {
+  const box = $('kb-list'); box.innerHTML = '';
+  for (const [gid, gname] of GROUPS) {
+    const h = document.createElement('div'); h.className = 'kb-group'; h.textContent = gname; box.appendChild(h);
+    for (const a of ACTIONS.filter((x) => x.g === gid)) {
+      const row = document.createElement('div'), cur = binds.get(a.id); row.className = 'kb-row';
+      const label = document.createElement('span'); label.textContent = a.fa; row.appendChild(label);
+      for (let i = 0; i < 2; i++) {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'kb-key' + (cur[i] ? '' : ' empty') + (cur[i] !== a.def[i] ? ' changed' : ''); b.textContent = codeLabel(cur[i]);
+        b.addEventListener('click', () => startCapture(a.id, i, b)); row.appendChild(b);
+      }
+      const r = document.createElement('button'); r.type = 'button'; r.className = 'kb-reset1'; r.textContent = '↺'; r.title = 'پیش‌فرض'; r.disabled = binds.isDefault(a.id); r.addEventListener('click', () => { binds.reset(a.id); renderKeys(); updateModeNote(); }); row.appendChild(r);
+      box.appendChild(row);
+    }
+  }
+}
+function startCapture(id, idx, btn) { cancelCapture(); capturing = { id, idx, btn }; btn.classList.add('wait'); btn.textContent = 'کلید را بزن…'; $('kb-msg').textContent = ''; }
+function cancelCapture() { if (capturing) { capturing = null; if (!$('kb-list').hidden) renderKeys(); } }
+function finishCapture(code) {
+  const { id, idx } = capturing, msg = $('kb-msg'); capturing = null;
+  if (code === 'Escape') { renderKeys(); return; }
+  if (code === 'Backspace' || code === 'Delete') { binds.clear(id, idx); msg.textContent = 'پاک شد'; }
+  else if (RESERVED.has(code)) { msg.textContent = 'این کلید قابل تنظیم نیست (' + codeLabel(code) + ')'; }
+  else { const r = binds.assign(id, idx, code); const names = r.cleared.map((c) => ACTIONS.find((a) => a.id === c).fa); msg.textContent = names.length ? `«${codeLabel(code)}» از «${names.join('، ')}» برداشته شد و به این عمل رسید` : `ثبت شد: ${codeLabel(code)}`; }
+  renderKeys(); updateModeNote();
+}
+addEventListener('keydown', (e) => { if (!capturing) return; e.preventDefault(); e.stopImmediatePropagation(); finishCapture(e.code); }, true);
+addEventListener('mousedown', (e) => { if (!capturing) return; e.preventDefault(); e.stopImmediatePropagation(); finishCapture('Mouse' + e.button); }, true);
+addEventListener('contextmenu', (e) => { if (capturing) e.preventDefault(); }, true);
+$('kb-reset').addEventListener('click', () => { binds.reset(); renderKeys(); updateModeNote(); $('kb-msg').textContent = 'همهٔ کلیدها به حالت پیش‌فرض برگشت'; });
+// --- voice chat ---
+const micErr = (e) => ({ denied: 'اجازهٔ میکروفون داده نشده؛ از آیکون قفل کنار آدرس مرورگر اجازه بده', unavailable: 'میکروفونی پیدا نشد یا در حال استفادهٔ برنامهٔ دیگری است', unsupported: 'این مرورگر میکروفون را پشتیبانی نمی‌کند (آدرس باید HTTPS باشد)' }[e] || 'خطا در میکروفون');
+function setMicUI(state) {
+  document.body.classList.toggle('voice-on', state !== 'off');
+  const b = $('t-mic'); if (b) { b.classList.remove('vc-on', 'vc-tx', 'vc-muted', 'vc-denied'); const c = { tx: 'vc-tx', on: 'vc-on', muted: 'vc-muted', denied: 'vc-denied' }[state]; if (c) b.classList.add(c); }
+  const ind = $('vc-ind'), txt = { on: '🎙 میکروفون روشن', muted: '🔇 میکروفون بسته', denied: '⚠ میکروفون در دسترس نیست' }[state]; if (ind) { ind.hidden = !txt; if (txt) ind.textContent = txt; }
+}
+function updateModeNote() {
+  const el = $('vc-mode-note'); if (!el) return; const k = codeLabel(binds.get('voice')[0]), t = touch;
+  el.textContent = { ptt: t ? 'دکمهٔ میکروفون را نگه دار تا صدایت پخش شود.' : `کلید «${k}» را نگه دار تا صدایت پخش شود.`, toggle: t ? 'با یک بار زدنِ دکمهٔ میکروفون روشن می‌شود، با بار دوم خاموش.' : `با یک بار زدنِ «${k}» میکروفون روشن می‌شود، با بار دوم خاموش.`, open: `میکروفون خودکار با تشخیص صدا کار می‌کند؛ ${t ? 'دکمهٔ میکروفون' : '«' + k + '»'} میکروفون را قطع و وصل می‌کند.` }[settings.voiceMode] || '';
+}
+let testT = 0, vcPlayersT = 0, vcSig = '';
+function openVoicePane() {
+  for (const [id, key, f, d] of [['vc-sens', 'voiceSens', (v) => v + ' dB', -42], ['vc-mic', 'voiceMic', (v) => Math.round(v * 100) + '%', 1], ['vc-vol', 'voiceVol', (v) => Math.round(v * 100) + '%', 1]]) {
+    const el = $(id); el.value = settings[key] ?? d; $(id + '-v').textContent = f(el.value); el.oninput = () => { settings[key] = +el.value; $(id + '-v').textContent = f(el.value); save(); voice.applySettings(); };
+  }
+  const on = $('vc-on'); on.checked = settings.voiceOn !== false; on.onchange = () => { settings.voiceOn = on.checked; save(); if (!on.checked) voice.closeMic(); voice.applySettings(); };
+  updateModeNote(); fillDevices(); vcSig = ''; renderVcPlayers(); clearInterval(vcPlayersT); vcPlayersT = setInterval(renderVcPlayers, 2000);
+  $('vc-test').onclick = toggleVoiceTest; $('vc-status').textContent = voice.unavailable ? 'وویس چت فقط در بازی آنلاین کار می‌کند.' : '';
+}
+async function fillDevices() {
+  const sel = $('vc-dev'), devs = await voice.devices();
+  sel.innerHTML = '<option value="">پیش‌فرض سیستم</option>' + devs.filter((d) => d.deviceId && d.deviceId !== 'default').map((d) => `<option value="${esc(d.deviceId)}">${esc(d.label || 'Microphone')}</option>`).join('');
+  sel.value = settings.voiceDev || '';
+  sel.onchange = () => { settings.voiceDev = sel.value; save(); const wasTest = voice.testing; voice.closeMic(); if (wasTest) voice.openMic(); };
+}
+async function toggleVoiceTest() {
+  if (voice.testing) { stopVoiceTest(); return; }
+  const ok = await voice.openMic(); if (!ok) { $('vc-status').textContent = micErr(voice.error); return; }
+  voice.testing = true; $('vc-status').textContent = 'حرف بزن؛ نوار باید حرکت کند. (در این تست صدایت برای کسی ارسال نمی‌شود)'; $('vc-test').textContent = 'توقف تست'; fillDevices();
+  clearInterval(testT); testT = setInterval(() => { $('vc-meter').style.width = Math.min(100, Math.round(voice.level * 450)) + '%'; }, 70);
+}
+function stopVoiceTest() { clearInterval(testT); if (voice.testing) { voice.testing = false; if (!voice.inRoom) voice.closeMic(); } const t = $('vc-test'); if (t) t.textContent = 'تست میکروفون'; const m = $('vc-meter'); if (m) m.style.width = '0'; }
+function renderVcPlayers() {
+  const box = $('vc-players'), list = (game.roster || []).filter((r) => !r.bot && r.id !== game.meId);
+  const sig = (game.inRoom ? 'r' : 'l') + list.map((r) => r.id + (voice.isMuted(r) ? 'm' : '')).join(',');
+  if (sig === vcSig) return; vcSig = sig;
+  if (!game.inRoom || !list.length) { box.innerHTML = '<p class="set-note">' + (game.inRoom ? 'بازیکن انسانی دیگری در سرور نیست.' : 'وارد یک سرور که شوی، اینجا می‌توانی صدای هر بازیکن را قطع یا کم و زیاد کنی.') + '</p>'; return; }
+  box.innerHTML = '';
+  for (const r of list) {
+    const key = voice.keyOf(r), row = document.createElement('div'); row.className = 'vc-pl';
+    row.innerHTML = `<div>${esc(r.name)}${r.pid ? `<small>ID ${esc(r.pid)}</small>` : ''}</div><input type="range" min="0" max="2" step="0.05" value="${voice.volFor(r)}"><button type="button" class="${voice.isMuted(r) ? 'on' : ''}">${voice.isMuted(r) ? 'میوت است' : 'میوت'}</button>`;
+    row.querySelector('input').oninput = (e) => { (settings.voiceVols ||= {})[key] = +e.target.value; save(); };
+    row.querySelector('button').onclick = () => { (settings.voiceMuted ||= {})[key] = !settings.voiceMuted[key]; if (!settings.voiceMuted[key]) delete settings.voiceMuted[key]; save(); vcSig = ''; renderVcPlayers(); };
+    box.appendChild(row);
+  }
+}
 // ---------- input ----------
 // Keep gameplay keyboard input inside the game surface. Without this capture
 // layer, browser shortcuts can see combinations such as Ctrl+W/Ctrl+R while
@@ -334,6 +427,7 @@ if (touch) {
   hold('t-use', () => game.net && game.net.emit('use'), () => game.net && game.net.emit('unuse'));
   hold('t-buy', () => game.toggleBuy());
   hold('t-chat', () => game.openChat(false));
+  hold('t-mic', () => voice.press(), () => voice.release());   // hold to talk (or tap, depending on the voice mode in settings)
   hold('t-score', () => { game.sbOpen = !game.sbOpen; hud.scoreboard(game.sbOpen, game.roster, game.meId, game.score, game.room); });
   hold('t-pause', () => game.toggleMenuPause());
   // --- weapon bar: tap = select, hold = drop that weapon
