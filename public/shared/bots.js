@@ -22,6 +22,16 @@ export function botRoundStart(room) {
   room.team('T').filter((p) => p.bot).forEach((p, i) => { const r = routes[i % routes.length]; p.ai.via = r.map((v) => [...v]); p.ai.role = site; p.ai.waitUntil = Date.now() + 6000 + Math.random() * 3000; });
 }
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+// Deathmatch: bots get a random full loadout for free every time they spawn.
+export function botBuyDM(room, p) {
+  const T = p.team === 'T', ok = (k) => room.buy(p, k).ok;
+  p.money = 16000;
+  if (!p.w[1]) {
+    const k = pick(T ? ['ak47', 'ak47', 'ak47', 'galil', 'sg553', 'mac10', 'p90', 'mp7', 'nova', 'awp', 'g3sg1', 'ssg08', 'xm1014'] : ['m4a4', 'm4a4', 'm4a1s', 'm4a1s', 'famas', 'aug', 'mp9', 'p90', 'mp7', 'mag7', 'awp', 'scar20', 'ssg08']);
+    if (!ok(k)) ok(T ? 'ak47' : 'm4a4');
+  }
+  ok('vesthelm'); if (Math.random() < 0.4) ok(pick(['deagle', 'p250', 'elite', 'cz75', T ? 'tec9' : 'fiveseven'])); if (Math.random() < 0.5) ok('he');
+}
 export function botBuy(room, p) {
   const m = () => p.money, T = p.team === 'T', pistolRound = room.round === 1 || room.round === 13;
   const buy = (k) => room.buy(p, k).ok;
@@ -85,9 +95,26 @@ function turnTo(p, yaw, pitch, rate, dt) {
   p.yaw += clamp(dy, -step, step); p.pitch += clamp(dp, -step, step);
   if (p.yaw > Math.PI) p.yaw -= Math.PI * 2; if (p.yaw < -Math.PI) p.yaw += Math.PI * 2;
 }
+// Places a deathmatch bot may walk to: hold spots, bombsite centres and both spawn areas (walkable cells only), computed once per room.
+function roamPoints(room) {
+  if (room.roamPts) return room.roamPts;
+  const def = room.map.def, nav = room.nav, pts = [], add = (x, z) => { const i = Math.floor(z) * nav.W + Math.floor(x); if (x >= 0 && z >= 0 && nav.walk[i]) pts.push([x, z]); };
+  for (const arr of Object.values(def.holds || {})) for (const h of arr) add(h[0], h[1]);
+  for (const r of Object.values(def.sites || {})) add((r[0] + r[2]) / 2, (r[1] + r[3]) / 2);
+  for (const t of ['T', 'CT']) for (const s of room.map.spawnPoints[t] || []) add(s.x, s.z);
+  if (!pts.length) pts.push([room.map.W / 2, room.map.H / 2]);
+  return (room.roamPts = pts);
+}
 function goalField(room, p, ai, now) {
   const nav = room.nav, def = room.map.def, b = room.bomb;
   if (room.phase === 'warmup') return { f: field(nav, 'buy' + (p.team === 'T' ? 'CT' : 'T'), rectCells(nav, def.buy[p.team === 'T' ? 'CT' : 'T'])) };
+  if (room.mode === 'dm') {   // deathmatch: no bomb, no sites to hold - roam between the interesting spots of the map and hunt
+    if (!ai.roam || now > ai.roam.until || Math.hypot(p.x - ai.roam.x, p.z - ai.roam.z) < 3) {
+      const pts = roamPoints(room), q = pts[Math.floor(Math.random() * pts.length)];
+      ai.roam = { x: q[0], z: q[1], until: now + 12000 + Math.random() * 8000 };
+    }
+    return { f: pointField(nav, ai.roam.x, ai.roam.z, 1) };
+  }
   if (p.team === 'T') {
     if (b.state === 'planted') return { f: pointField(nav, b.x, b.z, 3), hold: true, look: [b.x, b.z], guard: true };
     if (b.state === 'dropped') { const ts = room.team('T').filter((q) => q.alive && q.bot); const near = ts.sort((a, c) => Math.hypot(a.x - b.x, a.z - b.z) - Math.hypot(c.x - b.x, c.z - b.z))[0]; if (near === p) return { f: pointField(nav, b.x, b.z, 0) }; }

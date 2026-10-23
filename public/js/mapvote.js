@@ -11,10 +11,10 @@ export class MapVote {
 
   show(d) {
     clearInterval(this.timer); clearTimeout(this.hideT); this.done = false; this.mine = null;
-    const win = d.winner === 'T' ? 'T' : 'CT', mineTeam = d.myTeam === 'T' || d.myTeam === 'CT' ? d.myTeam : null;
+    const draw = d.winner === 'DRAW', win = draw ? 'DRAW' : d.winner === 'T' ? 'T' : 'CT', mineTeam = d.myTeam === 'T' || d.myTeam === 'CT' ? d.myTeam : null;
     this.el.dataset.win = win;
-    $('mv-kicker').textContent = mineTeam ? (mineTeam === win ? 'پیروزی' : 'شکست') : 'پایان بازی';
-    $('mv-win').textContent = win === 'T' ? 'تروریست‌ها برنده شدند' : 'ضدتروریست‌ها برنده شدند';
+    $('mv-kicker').textContent = draw ? 'پایان بازی' : mineTeam ? (mineTeam === win ? 'پیروزی' : 'شکست') : 'پایان بازی';
+    $('mv-win').textContent = draw ? 'بازی مساوی شد' : win === 'T' ? 'تروریست‌ها برنده شدند' : 'ضدتروریست‌ها برنده شدند';
     $('mv-score').innerHTML = `<span class="ct"><small>CT</small><b>${d.score.CT}</b></span><i>:</i><span class="t"><b>${d.score.T}</b><small>T</small></span>`;
     $('mv-result').hidden = true; $('mv-title').hidden = false;
     this.grid.innerHTML = d.options.map((o) => `<button class="mv-opt" data-id="${esc(o.id)}"><img alt="" draggable="false" src="${mapThumb(o.id)}"><span class="mv-name">${esc(String(o.name).toUpperCase())}</span>${o.id === d.current ? '<span class="mv-cur">الان</span>' : ''}<span class="mv-cnt">0</span></button>`).join('');

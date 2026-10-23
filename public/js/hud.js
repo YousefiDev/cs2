@@ -81,8 +81,8 @@ export class HUD {
     }
     const h = html.join(''); if (h !== this._slots) { $('slots').innerHTML = h; this._slots = h; }
   }
-  setTop(score, round, timer, low, planted, alive) {
-    $('sc-ct').textContent = score.CT; $('sc-t').textContent = score.T; $('round-no').textContent = 'ROUND ' + Math.max(1, round);
+  setTop(score, round, timer, low, planted, alive, label = '') {
+    $('sc-ct').textContent = score.CT; $('sc-t').textContent = score.T; $('round-no').textContent = label || 'ROUND ' + Math.max(1, round);
     $('timer').textContent = timer; $('timer').classList.toggle('low', low); $('bomb-ind').hidden = !planted; document.body.classList.toggle('bomb-planted', !!planted);
     for (const t of ['T', 'CT']) { const h = alive[t].map((a) => `<i class="${a ? '' : 'dead'}"></i>`).join(''); if (this['_al' + t] !== h) { $(t === 'T' ? 'al-t' : 'al-ct').innerHTML = h; this['_al' + t] = h; } }
   }

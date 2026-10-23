@@ -95,7 +95,7 @@ export class ServerBrowser {
       const st = this.status(r), total = r.humans + r.bots, full = total >= r.max, fill = Math.min(100, Math.round((total / r.max) * 100)), hfill = Math.min(100, Math.round((r.humans / r.max) * 100));
       return `<div class="room ${r.code === this.sel ? 'sel' : ''} ${full ? 'full' : ''}" data-code="${esc(r.code)}">
         <button class="fav ${this.favs.has(r.code) ? 'on' : ''}" data-fav="${esc(r.code)}" aria-label="علاقه‌مندی">★</button>
-        <div class="rn"><div class="rt">${esc(r.title)}</div><div class="rc">${esc(r.code)}</div></div>
+        <div class="rn"><div class="rt">${esc(r.title)}${r.mode === 'dm' ? '<span class="mode-pill">DEATHMATCH</span>' : ''}</div><div class="rc">${esc(r.code)}</div></div>
         <div class="rm"><img alt="" src="${mapThumb(r.map)}"><span>${esc(mapLabel(r.map))}</span></div>
         <div class="rp"><div class="bar"><i class="b" style="width:${fill}%"></i><i class="h" style="width:${hfill}%"></i></div><span><b>${r.humans}</b> / ${r.max}${r.bots ? ` <small>+${r.bots} bot</small>` : ''}</span></div>
         <div class="rs ${st.c}">${esc(st.t)}</div>
@@ -107,7 +107,7 @@ export class ServerBrowser {
     if (!r) { this.detail.hidden = true; return; }
     const st = this.status(r), full = r.humans + r.bots >= r.max, names = (r.names || []).map((n) => `<span>${esc(n)}</span>`).join('') || '<em>هنوز بازیکن انسانی نیست</em>';
     this.detail.hidden = false;
-    this.detail.innerHTML = `<img class="dv-map" alt="" src="${mapThumb(r.map)}"><div class="dv-info"><h3>${esc(r.title)} <small dir="ltr">${esc(r.code)}</small></h3>
+    this.detail.innerHTML = `<img class="dv-map" alt="" src="${mapThumb(r.map)}"><div class="dv-info"><h3>${esc(r.title)} <small dir="ltr">${esc(r.code)}</small>${r.mode === 'dm' ? '<span class="mode-pill">TEAM DEATHMATCH</span>' : ''}</h3>
       <div class="dv-meta"><span>${esc(mapLabel(r.map))}</span><span>${esc(st.t)}</span><span>بات: ${r.botMode === 'none' ? 'ندارد' : esc(diffFa[r.difficulty] || r.difficulty)}</span><span dir="ltr">CT ${r.teams ? r.teams.CT : '–'} · T ${r.teams ? r.teams.T : '–'}</span></div>
       <div class="dv-names">${names}</div></div><button class="join big" data-join="${esc(r.code)}" ${full ? 'disabled' : ''}>${full ? 'FULL' : 'JOIN'}</button>`;
   }

@@ -32,7 +32,7 @@ export class ServerCore {
     // Keep persistence beside the app even when the server is started from
     // another working directory.
     this.dataFile = opts.dataFile || (RUNNING_IN_BROWSER ? 'cs-dust-online-data' : RUNNING_IN_NODE ? path.join(process.cwd(), 'server-data.json') : 'cs-dust-online-data');
-    this.data = { bans: {}, mutes: {}, profiles: {}, permissions: {}, servers: {}, accounts: {}, sessions: {}, nextPid: 1000000000, settings: { weaponLimits: { awp: 0, sg553: 0, aug: 0 } } };
+    this.data = { bans: {}, mutes: {}, profiles: {}, permissions: {}, servers: {}, accounts: {}, sessions: {}, stats: {}, nextPid: 1000000000, settings: { weaponLimits: { awp: 0, sg553: 0, aug: 0 } } };
     this.requireLogin = !!opts.requireLogin; this.authFail = new Map(); this.regLog = new Map(); this.userIdx = new Map();
     try {
       const raw = RUNNING_IN_BROWSER ? localStorage.getItem(this.dataFile) : RUNNING_IN_NODE ? (fs.existsSync(this.dataFile) ? fs.readFileSync(this.dataFile, 'utf8') : null) : null;
@@ -69,9 +69,9 @@ export class ServerCore {
   }
   leave(c) { const r = c.room && this.rooms.get(c.room); if (r) r.removePlayer(c.id); c.room = null; }
   list() { return [...this.rooms.values()].map((r) => r.summary()).sort((a, b) => b.humans - a.humans); }
-  makeRoomConfig(d = {}, code = null) { const c = code || makeCode(); return { code:c, title:cleanName(d.title || 'Community Server').slice(0,24), map:MAP_DEFS[d.map] ? d.map : 'dust2', bots:d.bots === 'none' ? 'none' : 'fill', difficulty:['easy','normal','hard'].includes(d.difficulty) ? d.difficulty : 'normal', max:Math.max(2, Math.min(16, Number(d.max)||10)), weaponLimits:{awp:0,sg553:0,aug:0}, enabled:true, createdAt:Date.now() }; }
+  makeRoomConfig(d = {}, code = null) { const c = code || makeCode(); return { code:c, title:cleanName(d.title || 'Community Server').slice(0,24), map:MAP_DEFS[d.map] ? d.map : 'dust2', bots:d.bots === 'none' ? 'none' : 'fill', difficulty:['easy','normal','hard'].includes(d.difficulty) ? d.difficulty : 'normal', mode:d.mode === 'dm' ? 'dm' : 'comp', max:Math.max(2, Math.min(16, Number(d.max)||10)), weaponLimits:{awp:0,sg553:0,aug:0}, enabled:true, createdAt:Date.now() }; }
   bootRoom(cfg) { if (!cfg || !cfg.enabled || this.rooms.has(cfg.code)) return null; try { return this.bootRoomUnsafe(cfg); } catch (e) { console.error('[boot]', cfg.code, cfg.map, e && e.message); if (cfg.map !== 'dust2') { try { return this.bootRoomUnsafe({ ...cfg, map: 'dust2' }); } catch (e2) { console.error('[boot-fallback]', e2 && e2.message); } } return null; } }
-  bootRoomUnsafe(cfg) { const room = new GameRoom({ code:cfg.code, map:cfg.map, title:cfg.title, bots:cfg.bots, difficulty:cfg.difficulty, voice:cfg.voice, max:cfg.max, weaponLimits:{...(this.data.settings?.weaponLimits||{}), ...(cfg.weaponLimits||{})}, profiles:this.data.profiles, moderation:this.data, saveData:()=>this.saveData(), addXp:(key,n)=>this.addXp(key,n) }, this.out); this.rooms.set(cfg.code, room); return room; }
+  bootRoomUnsafe(cfg) { const room = new GameRoom({ code:cfg.code, map:cfg.map, title:cfg.title, bots:cfg.bots, difficulty:cfg.difficulty, mode:cfg.mode, voice:cfg.voice, max:cfg.max, weaponLimits:{...(this.data.settings?.weaponLimits||{}), ...(cfg.weaponLimits||{})}, profiles:this.data.profiles, moderation:this.data, saveData:()=>this.saveData(), addXp:(key,n)=>this.addXp(key,n), addStat:(k,f,n,w)=>this.addStat(k,f,n,w) }, this.out); this.rooms.set(cfg.code, room); return room; }
   loadManagedRooms() { for (const cfg of Object.values(this.data.servers || {})) if (cfg.enabled) this.bootRoom(cfg); }
   ensureDefaultServers(list) {
     // First boot: create public servers so friends can join right away without opening the admin panel.
@@ -89,6 +89,8 @@ export class ServerCore {
       if (this.limited(c, ev)) return;
       switch (ev) {
         case 'hello': c.name = c.acc ? c.acc.nick : cleanName(d && d.name); if (d && typeof d.session === 'string') c.session = d.session.replace(/[^\w-]/g, '').slice(0, 64); if (this.isBanned(c.name, c.ip, this.keyOfClient(c))) return reply({ ok:false, error:'BANNED' }); return reply({ ok: true, id: c.id, t: Date.now(), maps: MAP_LIST, auth: { required: !!this.requireLogin && !c.offline, account: c.acc ? this.accountView(c.acc) : null } });
+        case 'stats:board': return reply(this.leaderboard(String(d && d.by || 'k'), Math.max(1, Math.min(100, Number(d && d.limit) || 50)), c.acc ? c.acc.pid : ''));
+        case 'stats:me': return reply(c.acc ? this.myStats(c.acc) : { ok: false, error: 'LOGIN_REQUIRED' });
         case 'auth:register': case 'auth:login': case 'auth:resume': case 'auth:logout': case 'auth:nick': case 'auth:password': case 'auth:me':
           this.authCall(c, ev, d).then(reply, (e) => { console.error('[auth]', ev, e && e.message); reply({ ok:false, error:'Server error' }); }); return;
         case 'ping': return reply(Date.now());
@@ -119,7 +121,7 @@ export class ServerCore {
       }
     } catch (e) { console.error('[core]', ev, e); reply({ ok: false, error: 'Server error' }); }
   }
-  adminRooms() { const out=[]; for(const cfg of Object.values(this.data.servers||{})){ const r=this.rooms.get(cfg.code); out.push(r ? {...r.summary(), managed:true, enabled:true} : {code:cfg.code,title:cfg.title,map:cfg.map,max:cfg.max,humans:0,bots:0,phase:'offline',round:0,score:{T:0,CT:0},botMode:cfg.bots,difficulty:cfg.difficulty,managed:true,enabled:false}); } return out.sort((a,b)=>(b.enabled-a.enabled)||(b.humans-a.humans)); }
+  adminRooms() { const out=[]; for(const cfg of Object.values(this.data.servers||{})){ const r=this.rooms.get(cfg.code); out.push(r ? {...r.summary(), managed:true, enabled:true} : {code:cfg.code,title:cfg.title,map:cfg.map,max:cfg.max,humans:0,bots:0,phase:'offline',round:0,score:{T:0,CT:0},botMode:cfg.bots,difficulty:cfg.difficulty,mode:cfg.mode||'comp',managed:true,enabled:false}); } return out.sort((a,b)=>(b.enabled-a.enabled)||(b.humans-a.humans)); }
   adminCreateServer(value) { let cfg=this.makeRoomConfig(value||{}); while(this.data.servers[cfg.code]) cfg=this.makeRoomConfig(value||{}); this.data.servers[cfg.code]=cfg; this.saveData(); const r=this.bootRoom(cfg); return r ? {ok:true,server:r.summary()} : {ok:false,error:'server_create_failed'}; }
   adminStartServer(code) { const cfg=this.data.servers[String(code||'').toUpperCase()]; if(!cfg) return {ok:false,error:'server_not_found'}; cfg.enabled=true; this.saveData(); const r=this.bootRoom(cfg); return {ok:true,server:r?.summary()||this.rooms.get(cfg.code)?.summary()}; }
   adminStopServer(code) { const c=String(code||'').toUpperCase(), cfg=this.data.servers[c]; if(!cfg) return {ok:false,error:'server_not_found'}; const r=this.rooms.get(c); if(r) { for(const p of [...r.humans()]) { const cl=this.clients.get(p.id); if(cl){ cl.room=null; cl.send('server:closed',{code:c}); } } this.rooms.delete(c); } cfg.enabled=false; this.saveData(); return {ok:true}; }
@@ -176,7 +178,7 @@ export class ServerCore {
     }
   }
   // ================= accounts: username + password, every player gets a unique numeric ID =================
-  rebuildAccounts() { this.data.accounts ||= {}; this.data.sessions ||= {}; this.userIdx = new Map(); for (const a of Object.values(this.data.accounts)) this.userIdx.set(String(a.username).toLowerCase(), a.pid); }
+  rebuildAccounts() { this.data.accounts ||= {}; this.data.sessions ||= {}; this.data.stats ||= {}; this.userIdx = new Map(); for (const a of Object.values(this.data.accounts)) this.userIdx.set(String(a.username).toLowerCase(), a.pid); }
   newPid() { const d = this.data; let pid; do { d.nextPid = (Number(d.nextPid) || 1000000000) + 1 + Math.floor(Math.random() * 9); pid = String(d.nextPid); } while (d.accounts[pid]); return pid; }
   accountView(a) { const xp = Number(this.data.profiles['#' + a.pid]?.xp) || 0, r = rankForXp(xp); return { pid: a.pid, username: a.username, nick: a.nick, xp, rank: r.name, rankTag: r.tag, createdAt: a.createdAt }; }
   attach(c, a) { c.acc = a; c.name = a.nick; }
@@ -251,20 +253,54 @@ export class ServerCore {
     if (s.exp - now < SESSION_MS * 0.66) { s.exp = now + SESSION_MS; this.saveData(); }
     this.attach(c, a); return { ok: true, account: this.accountView(a) };
   }
+  // ================= statistics (per account; guests have none) =================
+  addStat(key, f, n = 1, weapon = null) {
+    if (!/^#\d+$/.test(String(key)) || !['k', 'd', 'a', 'hs', 'wb', 'm', 'win', 'loss', 'dr'].includes(f)) return;
+    const s = (this.data.stats[key] ||= { k: 0, d: 0, a: 0, hs: 0, wb: 0, m: 0, win: 0, loss: 0, dr: 0, wp: {}, first: Date.now(), last: 0 });
+    s[f] = (s[f] || 0) + n; s.last = Date.now();
+    if (f === 'k' && weapon && /^[a-z0-9_]{1,16}$/.test(weapon)) s.wp[weapon] = (s.wp[weapon] || 0) + 1;
+    this.lbCache = null; this.saveData();
+  }
+  statRow(a) {
+    const s = this.data.stats['#' + a.pid] || {}, xp = Number(this.data.profiles['#' + a.pid]?.xp) || 0, k = s.k | 0, d = s.d | 0;
+    return { pid: a.pid, nick: a.nick, tag: rankForXp(xp).tag, xp, k, d, a: s.a | 0, hs: s.hs | 0, wb: s.wb | 0, m: s.m | 0, win: s.win | 0, loss: s.loss | 0, dr: s.dr | 0,
+      kd: Math.round(k / Math.max(1, d) * 100) / 100, hsp: k ? Math.round(100 * (s.hs | 0) / k) : 0, wr: s.m ? Math.round(100 * (s.win | 0) / s.m) : 0 };
+  }
+  // by: k (kills) | kd (needs 20+ kills) | win (wins) | xp. Cached for 5 s so a busy lobby cannot make the server sort over and over.
+  leaderboard(by, limit, viewerPid) {
+    if (!['k', 'kd', 'win', 'xp'].includes(by)) by = 'k';
+    const now = Date.now(); if (!this.lbCache || now - this.lbCache.t > 5000) this.lbCache = { t: now, by: {} };
+    let all = this.lbCache.by[by];
+    if (!all) {
+      all = Object.values(this.data.accounts).map((a) => this.statRow(a));
+      all = (by === 'kd' ? all.filter((r) => r.k >= 20) : by === 'win' ? all.filter((r) => r.m > 0) : by === 'k' ? all.filter((r) => r.k > 0 || r.d > 0) : all.filter((r) => r.xp > 0 || r.k > 0))
+        .sort((x, y) => (y[by] - x[by]) || (y.k - x.k) || (y.xp - x.xp));
+      all.forEach((r, i) => { r.pos = i + 1; }); this.lbCache.by[by] = all;
+    }
+    const i = viewerPid ? all.findIndex((r) => r.pid === viewerPid) : -1;
+    return { ok: true, by, rows: all.slice(0, limit), total: all.length, me: i >= 0 ? all[i] : null };
+  }
+  myStats(a) {
+    const s = this.data.stats['#' + a.pid] || { wp: {} }, row = this.statRow(a);
+    const weapons = Object.entries(s.wp || {}).sort((x, y) => y[1] - x[1]).slice(0, 6).map(([k, n]) => ({ k, n }));
+    const pos = {}; for (const by of ['k', 'kd', 'win', 'xp']) { const r = this.leaderboard(by, 1, a.pid).me; pos[by] = r ? r.pos : 0; }
+    return { ok: true, account: this.accountView(a), stats: row, weapons, pos, since: s.first || a.createdAt };
+  }
   // ---- admin: accounts ----
   adminAccounts() {
-    return { ok: true, accounts: Object.values(this.data.accounts).map((a) => ({ pid: a.pid, username: a.username, nick: a.nick, createdAt: a.createdAt, lastLogin: a.lastLogin, xp: Number(this.data.profiles['#' + a.pid]?.xp) || 0, online: this.isOnlinePid(a.pid), banned: !!this.data.bans['#' + a.pid], role: this.data.permissions['#' + a.pid]?.role || '' })).sort((x, y) => y.lastLogin - x.lastLogin) };
+    return { ok: true, accounts: Object.values(this.data.accounts).map((a) => ({ pid: a.pid, username: a.username, nick: a.nick, createdAt: a.createdAt, lastLogin: a.lastLogin, xp: Number(this.data.profiles['#' + a.pid]?.xp) || 0, k: this.data.stats['#' + a.pid]?.k | 0, d: this.data.stats['#' + a.pid]?.d | 0, m: this.data.stats['#' + a.pid]?.m | 0, win: this.data.stats['#' + a.pid]?.win | 0, online: this.isOnlinePid(a.pid), banned: !!this.data.bans['#' + a.pid], role: this.data.permissions['#' + a.pid]?.role || '' })).sort((x, y) => y.lastLogin - x.lastLogin) };
   }
   async adminAccount(action, d) {
     const a = this.data.accounts[String(d && d.pid || '')]; if (!a) return { ok: false, error: 'account_not_found' };
     switch (action) {
       case 'resetpw': { const pw = [...webcrypto.getRandomValues(new Uint8Array(10))].map((b) => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join(''); await this.setPassword(a, pw); for (const [k, v] of Object.entries(this.data.sessions)) if (v.pid === a.pid) delete this.data.sessions[k]; this.saveData(); this.logAdmin('-', `reset password of ${a.username} (#${a.pid})`); return { ok: true, password: pw }; }
+      case 'resetstats': { delete this.data.stats['#' + a.pid]; this.lbCache = null; this.saveData(); this.logAdmin('-', `reset stats of ${a.username} (#${a.pid})`); return { ok: true }; }
       case 'nick': { a.nick = cleanName(d.nick); this.saveData(); this.logAdmin('-', `nick ${a.username} -> ${a.nick}`); return { ok: true }; }
       case 'rename': { const u = String(d.username || '').trim(), low = u.toLowerCase(); if (!USER_RE.test(u) || RESERVED.has(low)) return { ok: false, error: 'BAD_USERNAME' }; const o = this.userIdx.get(low); if (o && o !== a.pid) return { ok: false, error: 'USERNAME_TAKEN' }; this.userIdx.delete(String(a.username).toLowerCase()); a.username = u; this.userIdx.set(low, a.pid); this.saveData(); this.logAdmin('-', `rename #${a.pid} -> ${u}`); return { ok: true }; }
       case 'delete': {
         for (const r of this.rooms.values()) { const p = r.findPid(a.pid); if (p) { const cl = this.clients.get(p.id); r.removePlayer(p.id); if (cl) { cl.room = null; cl.acc = null; cl.send('server:closed', { reason: 'account_deleted' }); } } }
         delete this.data.accounts[a.pid]; this.userIdx.delete(String(a.username).toLowerCase()); for (const [k, v] of Object.entries(this.data.sessions)) if (v.pid === a.pid) delete this.data.sessions[k];
-        const key = '#' + a.pid; delete this.data.profiles[key]; delete this.data.bans[key]; delete this.data.mutes[key]; delete this.data.permissions[key];
+        const key = '#' + a.pid; delete this.data.stats[key]; this.lbCache = null; delete this.data.profiles[key]; delete this.data.bans[key]; delete this.data.mutes[key]; delete this.data.permissions[key];
         this.saveData(); this.logAdmin('-', `delete account ${a.username} (#${a.pid})`); return { ok: true };
       }
     }
@@ -304,7 +340,7 @@ export class ServerCore {
     if (!r) return {ok:false,error:'room_not_found'};
     const result=r.adminRoom(action,value);
     if (result.ok && cfg) {
-      cfg.max=r.maxPlayers; cfg.difficulty=r.difficulty; cfg.bots=r.botMode; cfg.weaponLimits={...r.weaponLimits}; cfg.map=r.mapId; cfg.voice=r.voiceMode;
+      cfg.max=r.maxPlayers; cfg.difficulty=r.difficulty; cfg.bots=r.botMode; cfg.weaponLimits={...r.weaponLimits}; cfg.map=r.mapId; cfg.voice=r.voiceMode; cfg.mode=r.mode;
       this.saveData();
     }
     if (result.ok) this.logAdmin(key,`room ${action}${value!==undefined&&typeof value!=='object'?' = '+String(value).slice(0,40):''}`);

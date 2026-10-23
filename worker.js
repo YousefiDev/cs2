@@ -9,6 +9,7 @@ const DEFAULT_SERVERS = [
   { title: 'Dust II · Public', map: 'dust2', bots: 'fill', difficulty: 'normal', max: 10 },
   { title: 'Mirage · Public', map: 'mirage', bots: 'fill', difficulty: 'normal', max: 10 },
   { title: 'Inferno · Public', map: 'inferno', bots: 'fill', difficulty: 'normal', max: 10 },
+  { title: 'Dust II · Deathmatch', map: 'dust2', mode: 'dm', bots: 'fill', difficulty: 'normal', max: 10 },
 ];
 
 // A room broadcast calls send() once per player with the SAME data object. Serialise it once per tick
@@ -71,7 +72,7 @@ export class GameServer {
   async boot(env) {
     try {
       const st = this.state.storage;
-      const [custom, legacy, split, accs, sess] = await Promise.all([st.get('customMaps'), st.get('data'), st.list({ prefix: 'd:' }), st.list({ prefix: 'a:' }), st.list({ prefix: 's:' })]);
+      const [custom, legacy, split, accs, sess, stat] = await Promise.all([st.get('customMaps'), st.get('data'), st.list({ prefix: 'd:' }), st.list({ prefix: 'a:' }), st.list({ prefix: 's:' }), st.list({ prefix: 't:' })]);
       this.customMaps = custom || {};
       this.applyCustomMaps();
       let data = null;
@@ -89,7 +90,8 @@ export class GameServer {
         this.core.ensureDefaultServers(DEFAULT_SERVERS);
       }
       // accounts and login sessions are stored one record per key (a Durable Object value is limited to 128 KiB)
-      this.core.data.accounts = {}; this.core.data.sessions = {};
+      this.core.data.accounts = {}; this.core.data.sessions = {}; this.core.data.stats = {};
+      for (const [k, v] of stat) { this.core.data.stats[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
       for (const [k, v] of accs) { this.core.data.accounts[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
       for (const [k, v] of sess) { this.core.data.sessions[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
       this.core.rebuildAccounts();
@@ -102,8 +104,8 @@ export class GameServer {
   async flush() {
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
     const batch = {}, sigs = [], dels = [];
-    for (const [k, v] of Object.entries(this.core.data)) { if (k === 'accounts' || k === 'sessions') continue; const j = JSON.stringify(v); if (this.lastSaved.get(k) !== j) { batch['d:' + k] = v; sigs.push([k, j]); } }
-    for (const [m, pre] of [['accounts', 'a:'], ['sessions', 's:']]) {   // one storage key per account / session
+    for (const [k, v] of Object.entries(this.core.data)) { if (k === 'accounts' || k === 'sessions' || k === 'stats') continue; const j = JSON.stringify(v); if (this.lastSaved.get(k) !== j) { batch['d:' + k] = v; sigs.push([k, j]); } }
+    for (const [m, pre] of [['accounts', 'a:'], ['sessions', 's:'], ['stats', 't:']]) {   // one storage key per account / session
       const cur = this.core.data[m] || {};
       for (const [id, v] of Object.entries(cur)) { const sk = pre + id, j = JSON.stringify(v); if (this.lastSaved.get(sk) !== j) { batch[sk] = v; sigs.push([sk, j]); } }
       for (const sk of this.lastSaved.keys()) if (sk.startsWith(pre) && !(sk.slice(2) in cur)) dels.push(sk);

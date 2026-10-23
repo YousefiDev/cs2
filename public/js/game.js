@@ -51,7 +51,7 @@ export class Game {
   serverNow() { return Date.now() + this.offset; }
   onInit(d) {
     if (!this.net.offline && !this.pingTimer) { this.pingTimer = setInterval(() => this.ping(), 2000); this.ping(); }
-    this.room = d; this.meId = d.you; this.inRoom = true; if (this.voice) { this.voice.setRoom(true, !!this.net.offline); this.voice.arm(); } this.score = d.score; this.round = d.round; this.phase = d.phase; this.phaseEnd = d.phaseEnd;
+    this.room = d; this.meId = d.you; this.mode = d.mode || 'comp'; document.body.classList.toggle('mode-dm', this.mode === 'dm'); this.inRoom = true; if (this.voice) { this.voice.setRoom(true, !!this.net.offline); this.voice.arm(); } this.score = d.score; this.round = d.round; this.phase = d.phase; this.phaseEnd = d.phaseEnd;
     if (!this.offsetInit && this.net.offline) this.offset = 0; else if (!this.offsetInit) this.offset = d.t - Date.now();
     this.onRoster(d.roster); this.rankProfile = d.profile || null; this.onBomb(d.bomb); this.onDrops(d.drops); this.onSmokes(d.smokes || []); this.onFires(d.fires || []); this.alive = false; this.you = null;
     this.onMap && this.onMap(d.map); this.hud.show(true); this.hud.buildRadar(this.map); $('p-code').textContent = `SERVER ${d.code}`; $('ts-room').textContent = `${d.title} · ${d.code}`;
@@ -186,7 +186,7 @@ export class Game {
   onProfile(d) { this.rankProfile=d||this.rankProfile; this.updateRankHud(); }
   updateRankHud() { const p=this.rankProfile || this.you; if(!p) return; const x=Number(p.xp??this.you?.xp??0), name=p.rank??this.you?.rank??'Recruit', tag=p.rankTag??this.you?.rankTag??'R1'; const el=$('rankhud'); if(el){el.hidden=false; $('rank-tag').textContent=tag; $('rank-name').textContent=name; $('rank-xp').textContent=x+' XP';} }
   onYou(d) {
-    const now = performance.now(); const prev = this.you;
+    const now = performance.now(); const prev = this.you; this.protectEnd = d.pr ? now + d.pr : 0;   // deathmatch spawn protection (ms left)
     if (prev && !this.roundAmmoReset && now - this.lastLocalShot < 300) { for (const k of [1, 2]) if (d.w[k] && prev.w[k] && d.w[k].k === prev.w[k].k) d.w[k].mag = Math.min(d.w[k].mag, prev.w[k].mag); }
     if (prev && now - this.pendingSwitch < 350) d.a = prev.a;
     if (this.roundAmmoReset) this.roundAmmoReset = false;
@@ -206,7 +206,7 @@ export class Game {
   }
   onCorrect(d) { this.s.x = d.x; this.s.y = d.y; this.s.z = d.z; this.s.vx = this.s.vz = this.s.vy = 0; this.cid = d.cid; }
   onRound(d) {
-    const prevPhase = this.phase; this.phase = d.phase; this.phaseEnd = d.phaseEnd; this.round = d.round; this.score = d.score; this.liveStart = d.liveStart || this.liveStart;
+    const prevPhase = this.phase; if (d.mode) { this.mode = d.mode; document.body.classList.toggle('mode-dm', d.mode === 'dm'); } this.phase = d.phase; this.phaseEnd = d.phaseEnd; this.round = d.round; this.score = d.score; this.liveStart = d.liveStart || this.liveStart;
     if (d.msg) {
       const cls = d.winner || (d.planted ? 'red' : ''); this.hud.center(d.msg, d.sub || '', cls, d.winner ? 4500 : 3000);
       if (d.winner) { radio(d.winner === 'T' ? 'Terrorists win' : 'Counter-Terrorists win', this.settings.radio); this.sound.sting(d.winner === this.team); }
@@ -370,6 +370,7 @@ export class Game {
   canMove() { return this.alive && !this.menuPaused && this.phase !== 'freeze' && !(this.you && this.you.act) && !this.chatOpen; }
   canBuy() {
     if (!this.you || !this.alive || !this.room) return false; const snow = this.serverNow();
+    if (this.mode === 'dm') return this.phase !== 'over';                       // deathmatch: free buying any time, anywhere
     const t = this.phase === 'warmup' || this.phase === 'freeze' || (this.phase === 'live' && snow - this.liveStart < ROUND.buy * 1000);
     return t && (this.phase === 'warmup' || inRect(this.map.def.buy[this.team] || [0, 0, 0, 0], this.s.x, this.s.z));
   }
@@ -425,7 +426,7 @@ export class Game {
     const s = this.s, eye = [s.x, s.y + this.eyeH, s.z];
     const inac = inaccuracy(w, { speed: Math.hypot(s.vx, s.vz), grounded: s.onGround, crouch: s.crouch, shots: this.shotsFired, scoped: this.scope > 0 });
     const dir = w.melee ? forward(this.yaw, this.pitch) : spreadDir(forward(this.yaw + this.punchY, this.pitch + this.punchP), inac);
-    this.net.emit('shot', { o: eye.map((v) => +v.toFixed(3)), d: dir.map((v) => +v.toFixed(5)), t: Math.round(this.serverNow() - INTERP), w: it.k, alt: !!alt });
+    this.protectEnd = 0; this.net.emit('shot', { o: eye.map((v) => +v.toFixed(3)), d: dir.map((v) => +v.toFixed(5)), t: Math.round(this.serverNow() - INTERP), w: it.k, alt: !!alt });
     this.sound.shot(it.k, null);
     // local effects (prediction only, damage is server-side)
     const range = w.melee ? ((alt && w.altRange) || w.range) : (w.range || 220);
@@ -655,10 +656,11 @@ export class Game {
     let timer = '', low = false; const left = (this.phaseEnd - snow) / 1000;
     if (this.phase === 'warmup') timer = 'WARMUP'; else if (this.phase === 'planted') timer = ''; else { timer = fmt(left); low = this.phase === 'live' && left < 10; }
     const alive = { T: [], CT: [] }; for (const p of this.roster) if (p.team === 'T' || p.team === 'CT') alive[p.team].push(p.alive);
-    hud.setTop(this.score, this.round, timer, low, this.phase === 'planted', alive);
+    hud.setTop(this.score, this.round, timer, low, this.phase === 'planted', alive, this.mode === 'dm' ? `FIRST TO ${ROUND.dmKills}` : '');
     const me = this.you;
     if (me) { const it = this.activeItem(); hud.lastNades = me.g || {}; hud.setAmmo(it, it ? WEAPONS[it.k] : null, me.w, me.a, me.b); }
-    $('buyzone').hidden = !this.canBuy();
+    $('buyzone').hidden = this.mode === 'dm' || !this.canBuy();
+    document.body.classList.toggle('spawn-prot', this.alive && performance.now() < (this.protectEnd || 0));
     $('loc').textContent = calloutAt(this.map, this.alive ? this.s.x : this.camera.position.x, this.alive ? this.s.z : this.camera.position.z);
     // crosshair
     const w = this.activeW(); let gap = 4;
@@ -671,7 +673,8 @@ export class Game {
     else hud.progress('', null);
     // spectate bar
     const spec = !this.alive && this.inRoom && !(this.deathAt && now - this.deathAt < 2600);
-    $('spec').hidden = !spec; if (spec) { const r = this.remotes.get(this.specId), info = r && this.rosterMap.get(r.id); $('spec-n').textContent = info ? info.name : 'Free camera'; $('spec-n').style.color = r ? (r.team === 'T' ? 'var(--t)' : 'var(--ct)') : ''; $('spec-h').textContent = r ? `${r.hp} HP` : ''; }
+    { const rp = $('respawn'); if (rp) { const show = this.mode === 'dm' && !this.alive && this.inRoom && this.phase !== 'over' && !!this.deathAt; rp.hidden = !show; if (show) { const left = Math.max(0, ROUND.dmRespawn - (now - this.deathAt) / 1000); rp.textContent = left > 0.05 ? `ریسپاون در ${Math.ceil(left)} …` : 'در حال ریسپاون…'; } } }
+    $('spec').hidden = !spec || this.mode === 'dm'; if (spec) { const r = this.remotes.get(this.specId), info = r && this.rosterMap.get(r.id); $('spec-n').textContent = info ? info.name : 'Free camera'; $('spec-n').style.color = r ? (r.team === 'T' ? 'var(--t)' : 'var(--ct)') : ''; $('spec-h').textContent = r ? `${r.hp} HP` : ''; }
     // Touch controls belong only to the live player. Hide the entire mobile layer
     // during death/spectator mode so it cannot sit over the player being watched.
     const touchLayer = $('touch');
@@ -698,7 +701,7 @@ export class Game {
     else if (b.state === 'carried' && this.team === 'T') { const c = b.carrier === this.meId ? this.s : this.remotes.get(b.carrier); if (c) bomb = { x: c.x, z: c.z }; }
     this.hud.drawRadar(me, this.alive ? this.yaw : (this.remotes.get(this.specId)?.yaw ?? 0), blips, bomb);
   }
-  buyTimeLeft() { if (this.phase === 'warmup') return 'WARMUP'; const end = this.phase === 'freeze' ? this.phaseEnd + ROUND.buy * 1000 : this.liveStart + ROUND.buy * 1000; return fmt((end - this.serverNow()) / 1000) + ' left'; }
+  buyTimeLeft() { if (this.mode === 'dm') return 'FREE'; if (this.phase === 'warmup') return 'WARMUP'; const end = this.phase === 'freeze' ? this.phaseEnd + ROUND.buy * 1000 : this.liveStart + ROUND.buy * 1000; return fmt((end - this.serverNow()) / 1000) + ' left'; }
   renderBuy() { if (!this.you) return; this.hud._rerenderBuy = () => this.renderBuy(); this.hud.buyMenu(true, this.you, this.team, this.buyTimeLeft(), (k) => this.buy(k), () => this.toggleBuy(false), (k) => this.sell(k)); }
   buy(k) { this.sound.ui(1100); this.net.emit('buy', { item: k }, (r) => { if (!r || !r.ok) { this.hud.toast(r && r.error ? r.error : 'Cannot buy'); this.sound.ui(300); } else this.sound.money(); }); }
   sell(k) { this.sound.ui(800); this.net.emit('sell', { item: k }, (r) => { if (!r || !r.ok) { this.hud.toast(r && r.error ? r.error : 'Cannot sell'); this.sound.ui(300); } else { this.sound.money(); this.hud.toast(`Sold +$${r.price}`); } }); }

@@ -124,6 +124,7 @@ td{padding:8px;border-bottom:1px solid #18222f;vertical-align:middle}tr.pr{curso
         <div class="row" style="margin-top:12px">
           <div><label>نام سرور</label><input id="srvTitle" placeholder="Dust II #1"></div>
           <div><label>مپ</label><select id="srvMap"></select></div>
+          <div><label>مود بازی</label><select id="srvMode"><option value="comp">Competitive (راند + بمب)</option><option value="dm">Team Deathmatch</option></select></div>
           <div><label>بات</label><select id="srvBots"><option value="fill">Fill</option><option value="none">None</option></select></div>
           <div><label>سختی</label><select id="srvDiff"><option>easy</option><option selected>normal</option><option>hard</option></select></div>
           <div style="max-width:110px"><label>حداکثر</label><input id="srvMax" type="number" min="2" max="16" value="10"></div>
@@ -149,7 +150,7 @@ td{padding:8px;border-bottom:1px solid #18222f;vertical-align:middle}tr.pr{curso
           <div><label>محدودیت AWP / SG553 / AUG (۰ = بدون محدودیت)</label><div class="kv" style="margin:0"><div><input id="limAwp" type="number" min="0" max="8" placeholder="AWP"></div><div><input id="limSg" type="number" min="0" max="8" placeholder="SG"></div><div><input id="limAug" type="number" min="0" max="8" placeholder="AUG"></div><button id="limGo">ثبت</button></div></div>
           <div><label>پیام به همهٔ بازیکن‌ها</label><div class="kv" style="margin:0"><div><input id="sayIn" placeholder="Admin message"></div><button class="pri" id="sayGo">ارسال</button></div></div>
         </div>
-        <div class="row"><div><label>وویس چت</label><select id="voiceSel"><option value="team">فقط هم‌تیمی (پیش‌فرض)</option><option value="all">همه با همه</option><option value="off">خاموش</option></select></div><div><label>رأی‌گیری (Vote)</label><select id="voteKind"><option value="restart">Restart</option><option value="kick">Kick</option><option value="mute">Mute</option></select></div><div><label>بازیکن هدف (برای Kick/Mute)</label><select id="voteTarget"></select></div><button id="voteGo">شروع Vote</button></div>
+        <div class="row"><div><label>مود بازی (مسابقه از اول شروع می‌شود)</label><select id="modeSel"><option value="comp">Competitive</option><option value="dm">Team Deathmatch</option></select></div><div><label>وویس چت</label><select id="voiceSel"><option value="team">فقط هم‌تیمی (پیش‌فرض)</option><option value="all">همه با همه</option><option value="off">خاموش</option></select></div><div><label>رأی‌گیری (Vote)</label><select id="voteKind"><option value="restart">Restart</option><option value="kick">Kick</option><option value="mute">Mute</option></select></div><div><label>بازیکن هدف (برای Kick/Mute)</label><select id="voteTarget"></select></div><button id="voteGo">شروع Vote</button></div>
       </div>
     </section>
 
@@ -178,7 +179,7 @@ td{padding:8px;border-bottom:1px solid #18222f;vertical-align:middle}tr.pr{curso
     <section id="tab-accounts" class="hidden">
       <div class="panel">
         <div class="filters"><input id="accQ" placeholder="جستجو: نام کاربری، نام نمایشی یا آیدی …"><span id="accCount" style="color:var(--mut);font-size:12px;margin-right:auto"></span></div>
-        <div class="tw"><table><thead><tr><th>نام کاربری</th><th>آیدی</th><th>نام نمایشی</th><th>XP</th><th>نقش</th><th>آخرین ورود</th><th>وضعیت</th><th></th></tr></thead><tbody id="accBody"></tbody></table></div>
+        <div class="tw"><table><thead><tr><th>نام کاربری</th><th>آیدی</th><th>نام نمایشی</th><th>XP</th><th>K/D</th><th>بازی/برد</th><th>نقش</th><th>آخرین ورود</th><th>وضعیت</th><th></th></tr></thead><tbody id="accBody"></tbody></table></div>
         <div id="accEmpty" class="empty hidden">هنوز کسی ثبت‌نام نکرده است.</div>
         <div class="notice">ورود با «نام کاربری + رمز» انجام می‌شود و XP، بن، میوت و نقش به <b>آیدی عددی</b> حساب وصل است، نه به اسم؛ پس دو نفر هم‌نام با هم قاطی نمی‌شوند. رمزها فقط به‌صورت هش ذخیره می‌شوند و قابل دیدن نیستند؛ برای فراموشی رمز از «ریست رمز» استفاده کن.</div>
       </div>
@@ -262,7 +263,7 @@ async function loadRooms(){const r=await call('admin:list');if(!r?.ok)return;S.r
   if(!S.cur||!S.rooms.some(x=>x.code===S.cur))S.cur=(S.rooms.find(x=>x.enabled)||S.rooms[0])?.code||null;
   renderRooms();if(S.cur)loadRoom()}
 function phasePill(r){if(!r.enabled)return '<span class="pill off">OFFLINE</span>';const m={warmup:['warm','Warmup'],freeze:['warm','Freeze'],live:['live','Live'],planted:['over','Bomb planted'],over:['over','Round over']}[r.phase]||['','…'];return `<span class="pill ${m[0]}">${m[1]}</span>`}
-function srvCard(r,small){return `<div class="srv ${r.code===S.cur?'sel':''}" data-code="${r.code}"><b>${r.enabled?'🟢':'⚫'} ${esc(r.title)} ${phasePill(r)}</b><small>${r.code} · ${esc(r.map)} ${r.enabled?`· ${r.humans}/${r.max} بازیکن · ${r.bots} بات`:''}</small>${r.enabled?`<div class="sc"><span class="c">CT ${r.score?.CT??0}</span><span>:</span><span class="t">${r.score?.T??0} T</span><span style="color:var(--mut);font-weight:400;font-size:11px">R${r.round||0}</span></div>`:''}</div>`}
+function srvCard(r,small){return `<div class="srv ${r.code===S.cur?'sel':''}" data-code="${r.code}"><b>${r.enabled?'🟢':'⚫'} ${esc(r.title)} ${phasePill(r)}${r.mode==='dm'?' <span class="pill warm">DM</span>':''}</b><small>${r.code} · ${esc(r.map)} ${r.enabled?`· ${r.humans}/${r.max} بازیکن · ${r.bots} بات`:''}</small>${r.enabled?`<div class="sc"><span class="c">CT ${r.score?.CT??0}</span><span>:</span><span class="t">${r.score?.T??0} T</span><span style="color:var(--mut);font-weight:400;font-size:11px">R${r.round||0}</span></div>`:''}</div>`}
 function renderRooms(){
   $('serverPick').innerHTML=S.rooms.length?S.rooms.map(r=>`<option value="${r.code}" ${r.code===S.cur?'selected':''}>${r.enabled?'● ':'○ '}${esc(r.title)} (${r.code})</option>`).join(''):'<option>سروری وجود ندارد</option>';
   const on=S.rooms.filter(r=>r.enabled);$('stSrv').textContent=`${on.length}/${S.rooms.length}`;$('stHum').textContent=S.rooms.reduce((n,r)=>n+(r.humans||0),0);$('stBot').textContent=S.rooms.reduce((n,r)=>n+(r.bots||0),0);
@@ -271,8 +272,8 @@ function renderRooms(){
   const m=S.rooms.find(r=>r.code===S.cur);$('sStart').disabled=!m||m.enabled;$('sStop').disabled=!m||!m.enabled;$('sDel').disabled=!m;
   $('ctlTitle').textContent=m?`${m.title} · ${m.code} · ${m.map}${m.enabled?` · Round ${m.round||0}`:' · OFFLINE'}`:'یک سرور را انتخاب کن';
   document.querySelectorAll('.srv').forEach(x=>x.onclick=()=>pickServer(x.dataset.code));
-  for(const id of ['rRestart','rNew','rClean','rHeal','rResp','rSwap','mapGo','maxGo','limGo','sayGo','voteGo','voiceSel'])$(id).disabled=!m||!m.enabled;
-  if(m&&m.enabled){if(document.activeElement!==$('maxIn'))$('maxIn').value=m.max;if(document.activeElement!==$('diffSel'))$('diffSel').value=m.difficulty;if(document.activeElement!==$('voiceSel'))$('voiceSel').value=m.voice||'team';document.querySelectorAll('#botSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===m.botMode));if(document.activeElement!==$('mapSel'))$('mapSel').value=m.map}
+  for(const id of ['rRestart','rNew','rClean','rHeal','rResp','rSwap','mapGo','maxGo','limGo','sayGo','voteGo','voiceSel','modeSel'])$(id).disabled=!m||!m.enabled;
+  if(m&&m.enabled){if(document.activeElement!==$('maxIn'))$('maxIn').value=m.max;if(document.activeElement!==$('diffSel'))$('diffSel').value=m.difficulty;if(document.activeElement!==$('voiceSel'))$('voiceSel').value=m.voice||'team';if(document.activeElement!==$('modeSel'))$('modeSel').value=m.mode||'comp';document.querySelectorAll('#botSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===m.botMode));if(document.activeElement!==$('mapSel'))$('mapSel').value=m.map}
 }
 function pickServer(code){S.cur=code;S.sig='';S.players=[];S.sel=null;closeDrawer();renderRooms();loadRoom()}
 async function loadRoom(){if(!S.cur)return;const meta=S.rooms.find(x=>x.code===S.cur);if(meta&&!meta.enabled){S.players=[];renderPlayers();return}
@@ -348,14 +349,14 @@ $('rankGo').onclick=async()=>{const name=$('rankName').value.trim(),xp=Number($(
 $('roleGo').onclick=async()=>{const name=$('roleName').value.trim();if(!name)return;const r=await call('admin:global',{action:'permission',value:{name,role:$('roleSel').value}});toast(r?.ok?'✓':errTxt(r?.error),r?.ok?'ok':'er');loadModeration()};
 
 // ---------- servers tab ----------
-$('createSrv').onclick=async()=>{const value={title:$('srvTitle').value.trim()||'Community Server',map:$('srvMap').value,bots:$('srvBots').value,difficulty:$('srvDiff').value,max:Number($('srvMax').value)};const r=await call('admin:server',{action:'create',value});if(!r?.ok)return toast(r?.error||'ساخت ناموفق','er');S.cur=r.server.code;$('srvTitle').value='';toast('✓ سرور ساخته شد','ok');loadRooms()};
+$('createSrv').onclick=async()=>{const value={title:$('srvTitle').value.trim()||'Community Server',map:$('srvMap').value,mode:$('srvMode').value,bots:$('srvBots').value,difficulty:$('srvDiff').value,max:Number($('srvMax').value)};const r=await call('admin:server',{action:'create',value});if(!r?.ok)return toast(r?.error||'ساخت ناموفق','er');S.cur=r.server.code;$('srvTitle').value='';toast('✓ سرور ساخته شد','ok');loadRooms()};
 async function srvAct(action){if(!S.cur)return;const r=await call('admin:server',{action,code:S.cur});if(!r?.ok)return toast(errTxt(r?.error),'er');if(action==='delete')S.cur=null;toast('✓','ok');await loadRooms()}
 $('sStart').onclick=()=>srvAct('start');$('sStop').onclick=()=>confirm('سرور خاموش شود؟ بازیکن‌ها قطع می‌شوند.')&&srvAct('stop');$('sDel').onclick=()=>confirm('سرور برای همیشه حذف شود؟')&&srvAct('delete');
 const room=(action,value,ok)=>S.cur&&call('admin:room',{code:S.cur,action,value}).then(r=>{if(!r?.ok)toast(errTxt(r?.error),'er');else toast(ok||'✓','ok');S.sig='';loadRooms();return r});
 $('rRestart').onclick=()=>room('restart');$('rNew').onclick=()=>confirm('مسابقهٔ جدید شروع شود؟')&&room('newmatch');$('rClean').onclick=()=>room('clean');$('rHeal').onclick=()=>room('healall');$('rResp').onclick=()=>room('respawnall');$('rSwap').onclick=()=>room('swapteams');
 $('mapGo').onclick=()=>confirm('مپ عوض شود و مسابقه از اول شروع شود؟')&&room('map',$('mapSel').value,'✓ مپ عوض شد');
 document.querySelectorAll('#botSeg button').forEach(b=>b.onclick=()=>room('bots',b.dataset.v));
-$('diffSel').onchange=()=>room('difficulty',$('diffSel').value);$('voiceSel').onchange=()=>room('voice',$('voiceSel').value,'✓ وویس چت: '+$('voiceSel').value);$('maxGo').onclick=()=>room('max',Number($('maxIn').value));
+$('diffSel').onchange=()=>room('difficulty',$('diffSel').value);$('modeSel').onchange=()=>{if(confirm('مود عوض شود و مسابقه از اول شروع شود؟'))room('mode',$('modeSel').value,'✓ مود: '+$('modeSel').value);else renderRooms()};$('voiceSel').onchange=()=>room('voice',$('voiceSel').value,'✓ وویس چت: '+$('voiceSel').value);$('maxGo').onclick=()=>room('max',Number($('maxIn').value));
 $('limGo').onclick=async()=>{for(const [id,w] of [['limAwp','awp'],['limSg','sg553'],['limAug','aug']]){const v=$(id).value;if(v!=='')await call('admin:room',{code:S.cur,action:'weaponLimit',value:{weapon:w,limit:Number(v)}})}toast('✓ محدودیت‌ها ثبت شد','ok')};
 $('sayGo').onclick=()=>{const m=$('sayIn').value.trim();if(m){room('say',m,'✓ ارسال شد');$('sayIn').value=''}};$('sayIn').onkeydown=e=>{if(e.key==='Enter')$('sayGo').click()};
 $('voteGo').onclick=()=>room('vote',{kind:$('voteKind').value,value:$('voteTarget').value},'✓ Vote شروع شد');
@@ -366,14 +367,15 @@ S.accounts=[];S.accQ='';
 async function loadAccounts(){const r=await call('admin:accounts');if(!r?.ok)return;S.accounts=r.accounts||[];renderAccounts()}
 function renderAccounts(){const q=S.accQ.toLowerCase(),list=S.accounts.filter(a=>!q||[a.username,a.nick,a.pid].some(x=>String(x).toLowerCase().includes(q)));
   $('accCount').textContent=`${list.length} / ${S.accounts.length}`;$('accEmpty').classList.toggle('hidden',!!S.accounts.length);
-  $('accBody').innerHTML=list.map(a=>`<tr><td><b>${esc(a.username)}</b></td><td><span class="num">${esc(a.pid)}</span></td><td>${esc(a.nick)}</td><td><span class="num">${a.xp}</span></td>
+  $('accBody').innerHTML=list.map(a=>`<tr><td><b>${esc(a.username)}</b></td><td><span class="num">${esc(a.pid)}</span></td><td>${esc(a.nick)}</td><td><span class="num">${a.xp}</span></td><td><span class="num">${a.k}/${a.d}</span></td><td><span class="num">${a.m}/${a.win}</span></td>
     <td><select data-accrole="${esc(a.pid)}" style="width:auto;padding:4px 6px"><option value="none" ${a.role?'':'selected'}>—</option><option value="moderator" ${a.role==='moderator'?'selected':''}>Moderator</option><option value="admin" ${a.role==='admin'?'selected':''}>Admin</option><option value="owner" ${a.role==='owner'?'selected':''}>Owner</option></select></td>
     <td>${ago(a.lastLogin)}</td><td>${a.online?'<span class="chip g">ONLINE</span>':''}${a.banned?'<span class="chip r">BANNED</span>':''}</td>
-    <td><div class="btnrow" style="flex-wrap:nowrap"><button data-acc="resetpw" data-pid="${esc(a.pid)}">ریست رمز</button><button data-acc="nick" data-pid="${esc(a.pid)}" data-v="${esc(a.nick)}">نام نمایشی</button><button data-acc="rename" data-pid="${esc(a.pid)}" data-v="${esc(a.username)}">نام کاربری</button>${a.banned?`<button class="ok" data-acc="unban" data-pid="${esc(a.pid)}">Unban</button>`:`<button class="dng" data-acc="ban" data-pid="${esc(a.pid)}">Ban</button>`}<button class="dng" data-acc="delete" data-pid="${esc(a.pid)}" data-v="${esc(a.username)}">حذف</button></div></td></tr>`).join('')}
+    <td><div class="btnrow" style="flex-wrap:nowrap"><button data-acc="resetpw" data-pid="${esc(a.pid)}">ریست رمز</button><button data-acc="nick" data-pid="${esc(a.pid)}" data-v="${esc(a.nick)}">نام نمایشی</button><button data-acc="resetstats" data-pid="${esc(a.pid)}">ریست آمار</button><button data-acc="rename" data-pid="${esc(a.pid)}" data-v="${esc(a.username)}">نام کاربری</button>${a.banned?`<button class="ok" data-acc="unban" data-pid="${esc(a.pid)}">Unban</button>`:`<button class="dng" data-acc="ban" data-pid="${esc(a.pid)}">Ban</button>`}<button class="dng" data-acc="delete" data-pid="${esc(a.pid)}" data-v="${esc(a.username)}">حذف</button></div></td></tr>`).join('')}
 $('accQ').oninput=()=>{S.accQ=$('accQ').value;renderAccounts()};
 document.addEventListener('change',async e=>{const s=e.target.closest&&e.target.closest('select[data-accrole]');if(!s)return;const r=await call('admin:global',{action:'permission',value:{name:'#'+s.dataset.accrole,role:s.value}});toast(r?.ok?'✓ نقش ثبت شد':errTxt(r?.error),r?.ok?'ok':'er');loadAccounts()});
 document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('button[data-acc]');if(!b)return;const pid=b.dataset.pid,act=b.dataset.acc;let r;
   if(act==='resetpw'){if(!confirm('رمز این حساب ریست شود؟ همهٔ نشست‌های فعالش بسته می‌شود.'))return;r=await call('admin:account',{action:'resetpw',value:{pid}});if(r?.ok){prompt('رمز موقت جدید (به بازیکن بده؛ بعد خودش تغییرش بدهد):',r.password)}}
+  else if(act==='resetstats'){if(!confirm('آمار این حساب (کشتن، مرگ، برد ...) صفر شود؟'))return;r=await call('admin:account',{action:'resetstats',value:{pid}})}
   else if(act==='nick'){const v=prompt('نام نمایشی جدید:',b.dataset.v);if(v===null)return;r=await call('admin:account',{action:'nick',value:{pid,nick:v}})}
   else if(act==='rename'){const v=prompt('نام کاربری جدید (۳ تا ۱۶ حرف/عدد):',b.dataset.v);if(v===null)return;r=await call('admin:account',{action:'rename',value:{pid,username:v}})}
   else if(act==='delete'){if(prompt('برای حذف دائمی، نام کاربری را تایپ کن: '+b.dataset.v)!==b.dataset.v)return;r=await call('admin:account',{action:'delete',value:{pid}})}

@@ -9,6 +9,7 @@ export const PHYS = {
 export const ROUND = {
   freeze: 6, live: 115, bomb: 40, over: 6, buy: 25, maxRounds: 24, half: 12, winTo: 13,
   plant: 3.2, defuse: 10, defuseKit: 5, warmupRespawn: 3, matchOver: 12, mapVote: 20, lateSpawn: 20,
+  dmTime: 600, dmKills: 100, dmRespawn: 3, dmProtect: 2.5,   // team deathmatch: match length (s), team kill limit, respawn delay (s), spawn protection (s)
 };
 export const ECON = {
   start: 800, max: 16000, win: { elim: 3250, bomb: 3500, defuse: 3500, time: 3250 },

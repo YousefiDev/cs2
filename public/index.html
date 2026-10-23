@@ -28,6 +28,19 @@
 <div id="flashed" aria-hidden="true"></div>
 
 <!-- ================= LOBBY ================= -->
+<div id="statsbox" class="authbox" hidden dir="rtl">
+  <div class="auth-card stats-card">
+    <div class="auth-top"><h2>آمار و برترین‌ها</h2><button id="st-close" class="icon-btn" aria-label="بستن">✕</button></div>
+    <div id="st-tabs" class="auth-tabs"><button data-t="board" class="on">برترین‌ها</button><button data-t="me">آمار من</button></div>
+    <div id="st-board">
+      <div id="st-sort" class="st-sort"><button data-by="k" class="on">کشتن</button><button data-by="kd">K/D</button><button data-by="win">برد</button><button data-by="xp">XP</button></div>
+      <div class="st-wrap"><table class="st-table"><thead><tr><th>#</th><th>بازیکن</th><th>رنک</th><th>کشتن</th><th class="hide-s">مرگ</th><th>K/D</th><th class="hide-s">HS</th><th id="st-last-th">برد/بازی</th></tr></thead><tbody id="st-rows"></tbody></table></div>
+      <div id="st-me-row"></div>
+      <p id="st-note" class="set-note"></p>
+    </div>
+    <div id="st-mine" hidden><div id="st-mine-body"></div></div>
+  </div>
+</div>
 <div id="authbox" class="authbox" hidden dir="rtl">
   <div class="auth-card">
     <div class="auth-top"><h2 id="au-title">ورود به حساب</h2><button id="au-close" class="icon-btn" aria-label="بستن">✕</button></div>
@@ -60,6 +73,7 @@
         </div>
         <div id="acct-out-box" class="acct-guest"><button id="acct-login" class="cta">ورود / ثبت‌نام</button></div>
         <p id="acct-hint" class="acct-hint"></p>
+        <button id="open-stats" class="ghost stats-open" type="button">🏆 آمار و برترین‌ها</button>
       </div>
       <label class="field">
         <span>نام بازیکن</span>
@@ -161,6 +175,7 @@
   <div id="progress" hidden><span id="prog-l"></span><div><i id="prog-b"></i></div></div>
   <div id="chat"><div id="chat-log"></div><div class="chat-compose"><input id="chat-in" maxlength="120" autocomplete="off" hidden /><button id="chat-send" type="button" hidden aria-label="ارسال پیام">➤</button></div></div>
   <div id="spec" hidden><span class="spec-l">SPECTATING</span><b id="spec-n"></b><span id="spec-h"></span><small>Space / Click: next player · V: camera</small></div>
+  <div id="respawn" hidden></div>
   <div id="death" hidden><div class="death-k">Killed by <b id="death-k"></b></div><div id="death-w"></div></div>
   <div id="scope" hidden><div class="ring"></div></div>
   <div id="toast"></div>

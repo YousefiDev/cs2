@@ -9,6 +9,7 @@ import { connectOnline, connectOffline } from './net.js';
 import { TouchEditor, normalizeLayout, applyLayout, setupGate } from './touchui.js';
 import { ServerBrowser, buildMapPicker, mapLabel } from './lobby.js';
 import { AuthUI } from './auth.js';
+import { StatsUI } from './stats.js';
 import { Keybinds, ACTIONS, GROUPS, codeLabel, RESERVED } from './keybinds.js';
 import { VoiceChat } from './voice.js';
 
@@ -70,7 +71,11 @@ function showLobby() {
 buildMapPicker(document.querySelector('.seg.maps'));
 const browser = new ServerBrowser({ onJoin: (code) => join(code) });
 // Accounts: username + password, unique player ID. The server says whether login is required (it is, online).
-const auth = new AuthUI({ call: (ev, d) => new Promise((res) => (net && net.connected() ? net.emit(ev, d, res) : res({ ok: false, error: 'disconnected' }))) });
+const netCall = (ev, d) => new Promise((res) => (net && net.connected() ? net.emit(ev, d, res) : res({ ok: false, error: 'disconnected' })));
+const auth = new AuthUI({ call: netCall });
+// Statistics + leaderboards (per account, kept on the server)
+const stats = new StatsUI({ call: netCall, account: () => auth.account, openLogin: () => auth.open('login') });
+$('open-stats').addEventListener('click', async () => { try { await ensureOnline(); } catch (e) { setStatus('bad', 'اتصال به سرور برقرار نیست'); return; } stats.open('board'); });
 $('name').value = settings.name || '';
 $('name').addEventListener('input', () => { settings.name = $('name').value.trim().slice(0, 16); save(); });
 const playerName = () => (auth.account ? auth.account.nick : (settings.name || $('name').value || 'Player' + Math.floor(Math.random() * 900 + 100))).trim();
