@@ -4,6 +4,8 @@ import { getMap, instanceMap, inRect, siteAt, calloutAt, MAP_LIST, MAP_DEFS } fr
 import { canOccupy, groundAt, rayWorld, rayPlayer, stepMove, hasLOS, heightAt, ceilAt, traceBullet, updateDoors } from './physics.js';
 import { WEAPONS, WEAPON_KEYS, GEAR, defaultPistol, newWeapon, applyArmor, PART_MULT, NADES, NADE_LIMIT, newNades, nadeCount, firstNade, spreadDir } from './weapons.js';
 import { getNav } from './nav.js';
+import { AntiCheat } from './anticheat.js';
+import { isBad } from './chatfilter.js';
 import { rankForXp } from './ranks.js';
 import { botThink, botRoundStart, botBuy, botBuyDM, newBrain } from './bots.js';
 
@@ -20,7 +22,10 @@ export class GameRoom {
     this.mapId = opts.map || 'dust2'; this.map = instanceMap(getMap(this.mapId)); this.nav = getNav(getMap(this.mapId));
     this.maxPlayers = clamp(opts.max | 0 || 10, 2, 16);
     this.botMode = opts.bots === 'none' ? 'none' : 'fill';
+    this.onCheat = opts.onCheat || null; this.ac = new AntiCheat((p, kind, detail, v) => this.onCheat && this.onCheat(this, p, kind, detail, v));   // anti-cheat alerts go to the admin report queue
+    this.chatFilter = opts.filter !== false;                                  // block strong profanity in the text chat
     this.addStat = opts.addStat || null;                  // (key, field, n, weapon) -> account statistics
+    this.defaultMap = this.mapId;                         // the map this server goes back to when it empties (changed only by the admin)
     this.mode = opts.mode === 'dm' ? 'dm' : 'comp';     // 'comp' = rounds + bomb, 'dm' = team deathmatch (instant respawn, free buying, kill limit)
     this.voiceMode = ['team', 'all', 'off'].includes(opts.voice) ? opts.voice : 'team';   // who can hear whom on voice chat
     this.difficulty = ['easy', 'normal', 'hard'].includes(opts.difficulty) ? opts.difficulty : 'normal';
@@ -51,7 +56,7 @@ export class GameRoom {
   summary() {
     const h = this.humans();
     return { code: this.code, title: this.title, map: this.mapId, humans: h.length, bots: this.list.length - h.length, max: this.maxPlayers,
-      phase: this.phase, round: this.round, score: this.score, mode: this.mode, botMode: this.botMode, voice: this.voiceMode, difficulty: this.difficulty,
+      phase: this.phase, round: this.round, score: this.score, mode: this.mode, botMode: this.botMode, voice: this.voiceMode, filter: this.chatFilter, difficulty: this.difficulty,
       names: h.slice(0, 16).map((p) => p.name), teams: { T: this.team('T').length, CT: this.team('CT').length } };
   }
   makePlayer(id, name, bot) {
@@ -68,6 +73,7 @@ export class GameRoom {
     const w = this.score.T > this.score.CT ? 'T' : this.score.CT > this.score.T ? 'CT' : 'DRAW';
     for (const p of this.players.values()) { if (p.bot || (p.team !== 'T' && p.team !== 'CT')) continue; this.stat(p, 'm'); this.stat(p, w === 'DRAW' ? 'dr' : p.team === w ? 'win' : 'loss'); }
   }
+  evidence(p) { const s = p.ac || {}; return { k: p.k | 0, d: p.d | 0, a: p.a | 0, mk: s.k | 0, mhs: s.hs | 0, ping: p.ping | 0, flags: (s.flags || []).slice(-5).map((f) => ({ kind: f.kind, detail: f.detail, t: f.t })) }; }
   keyOf(p) { return p.key || String(p.name || '').toLowerCase(); }
   applyProfile(p) {
     const key=this.keyOf(p); const prof=this.profiles[key]||{}; const xp=Number(prof.xp)||0; const rr=rankForXp(xp);
@@ -94,20 +100,21 @@ export class GameRoom {
     for (const q of this.players.values()) { if (q.dmgBy.has(oldId)) { q.dmgBy.set(newId, q.dmgBy.get(oldId)); q.dmgBy.delete(oldId); } if (q.ai) { q.ai.target = sw(q.ai.target); q.ai.hurtBy = sw(q.ai.hurtBy); } }
     if (this.vote) { if (this.vote.eligible.delete(oldId)) this.vote.eligible.add(newId); if (oldId in this.vote.votes) { this.vote.votes[newId] = this.vote.votes[oldId]; delete this.vote.votes[oldId]; } }
     p.cid++; p.lastSt = 0; p.hist = [{ t: Date.now(), x: p.x, y: p.y, z: p.z, c: !!p.crouch }]; p.youDirty = true; this.rosterDirty = true;
-    this.send(newId, 'init', { ...this.initPayload(newId), resumed: true });
+    this.send(newId, 'init', { ...this.initPayload(newId), resumed: true }); this.sendVoteState(newId);
     if (p.alive) this.send(newId, 'spawn', { x: p.x, y: p.y, z: p.z, yaw: p.yaw, cid: p.cid });
     this.broadcast('chat', { sys: true, msg: `${p.name} reconnected` }, newId);
     return p;
   }
   resetEmpty() {
     // Last human left: drop the bots and go back to warmup so the next visitor gets a fresh match.
-    this.players.clear(); this.drops.clear(); this.nades.clear(); this.smokes = []; this.fires = []; this.decoys = []; this.vote = null;
+    this.players.clear(); this.drops.clear(); this.nades.clear(); this.smokes = []; this.fires = []; this.decoys = []; this.vote = null; this.mapVote = null; this.matchRecorded = false;
+    if (this.mapId !== this.defaultMap) this.changeMap(this.defaultMap);        // a voted map does not stay on an empty server
     this.phase = 'warmup'; this.phaseEnd = 0; this.round = 0; this.score = { T: 0, CT: 0 }; this.loss = { T: 0, CT: 0 }; this.bomb = { state: 'none' }; this.matchStartAt = 0; this.matchOver = false; this.rosterDirty = true;
   }
   addHuman(id, name, session = '', key = '', pid = '') {
     name = this.uniqueName(name);
     const p = this.makePlayer(id, name, false); p.session = session; p.key = key || ''; p.pid = pid || ''; this.applyProfile(p); this.players.set(id, p);
-    this.fillBots(); this.send(id, 'init', this.initPayload(id)); this.rosterDirty = true;
+    this.fillBots(); this.send(id, 'init', this.initPayload(id)); this.sendVoteState(id); this.rosterDirty = true;
     this.broadcast('chat', { sys: true, msg: `${name} joined the server` }, id);
     return p;
   }
@@ -233,7 +240,7 @@ export class GameRoom {
     this.rosterDirty = true; this.beginMapVote(now, winner);
   }
   startMatch(msg) {
-    this.round = 0; this.score = { T: 0, CT: 0 }; this.loss = { T: 0, CT: 0 }; this.matchOver = false; this.matchRecorded = false; this.matchStartAt = 0; this.mapVote = null;
+    this.round = 0; this.score = { T: 0, CT: 0 }; this.loss = { T: 0, CT: 0 }; this.matchOver = false; this.matchRecorded = false; this.matchStartAt = 0; this.mapVote = null; for (const q of this.players.values()) this.ac.newMatch(q);
     for (const p of this.players.values()) { p.money = ECON.start; p.k = p.d = p.a = 0; this.resetLoadout(p); p.alive = false; }
     if (this.mode === 'dm') { this.startDM(msg || 'Deathmatch started'); return; }
     this.startRound(msg || 'Match started');
@@ -276,30 +283,36 @@ export class GameRoom {
   // ---- end of the match: winner screen + vote for the next map (every map in MAP_LIST, custom maps included) ----
   beginMapVote(now, winner) {
     const options = MAP_LIST.map((m) => ({ id: m.id, name: m.name }));
-    this.mapVote = { options, votes: new Map(), minEnd: now + 5000 };
+    this.mapVote = { options, votes: new Map(), minEnd: now + 5000, winner };
     this.broadcast('mapvote', { kind: 'start', options, until: this.phaseEnd, winner, score: this.score, current: this.mapId });
   }
-  mapTally() { const t = {}; if (this.mapVote) for (const m of this.mapVote.votes.values()) t[m] = (t[m] || 0) + 1; return t; }
+  // Votes are stored per player (account id / name), so a reconnect keeps its vote and cannot vote twice; players who left do not count.
+  presentKeys() { return new Set(this.humans().filter((p) => !p.dc).map((p) => this.keyOf(p))); }
+  mapTally() { const t = {}, here = this.presentKeys(); if (this.mapVote) for (const [k, m] of this.mapVote.votes) if (here.has(k)) t[m] = (t[m] || 0) + 1; return t; }
+  sendVoteState(id) {   // someone who joins / reconnects while the vote is open sees the same screen as everybody else
+    const v = this.mapVote, p = this.players.get(id); if (!v || !p || this.phase !== 'over' || !this.matchOver) return;
+    this.send(id, 'mapvote', { kind: 'start', options: v.options, until: this.phaseEnd, winner: v.winner, score: this.score, current: this.mapId, votes: this.mapTally(), mine: v.votes.get(this.keyOf(p)) || null });
+  }
   castMapVote(p, map) {
     const v = this.mapVote; if (!v || this.phase !== 'over' || !this.matchOver || p.bot) return { ok: false, error: 'no_vote' };
     if (!v.options.some((o) => o.id === map)) return { ok: false, error: 'bad_map' };
-    v.votes.set(p.id, map); this.broadcast('mapvote', { kind: 'tally', votes: this.mapTally() }); return { ok: true };
+    v.votes.set(this.keyOf(p), map); this.broadcast('mapvote', { kind: 'tally', votes: this.mapTally() }); return { ok: true };
   }
   finishMapVote() {
     const v = this.mapVote; this.mapVote = null; let pick = this.mapId;
     if (v) {
       const t = this.mapTallyOf(v), top = Math.max(0, ...Object.values(t));
-      const pool = top ? Object.keys(t).filter((k) => t[k] === top) : v.options.map((o) => o.id);   // most votes wins, ties / no votes: random
+      const pool = top ? Object.keys(t).filter((k) => t[k] === top) : [this.mapId];   // most votes wins; a tie is decided randomly; nobody voted = stay on this map
       pick = pool[Math.floor(Math.random() * pool.length)];
       this.broadcast('mapvote', { kind: 'result', map: pick, name: (v.options.find((o) => o.id === pick) || {}).name || pick, votes: t });
     }
     if (pick !== this.mapId) this.changeMap(pick);
     this.startMatch('New match');
   }
-  mapTallyOf(v) { const t = {}; for (const m of v.votes.values()) t[m] = (t[m] || 0) + 1; return t; }
+  mapTallyOf(v) { const t = {}, here = this.presentKeys(); for (const [k, m] of v.votes) if (here.has(k)) t[m] = (t[m] || 0) + 1; return t; }
   changeMap(id) {
     if (!MAP_DEFS[id]) return; this.mapId = id; const base = getMap(id);
-    this.map = instanceMap(base); this.nav = getNav(base); this.broadcast('mapchange', { map: id });
+    this.map = instanceMap(base); this.nav = getNav(base); this.roamPts = null; this.mapVote = null; this.broadcast('mapchange', { map: id });
   }
   checkRoundEnd() {
     if (this.mode === 'dm') return;                                    // deathmatch has no rounds
@@ -337,6 +350,7 @@ export class GameRoom {
     else {
     const tr = this.trace(o, d, range, w), best = this.pickTarget(p, o, d, tr, rt);
     const T = best ? best.t : tr.end.t; const end = [r2(o[0] + d[0] * T), r2(o[1] + d[1] * T), r2(o[2] + d[2] * T)];
+    if (best && best.part === 'head' && !w.melee) { const j = this.ac.snap(p, now); if (j > 60) this.ac.record(p, 'snap', 1, `view turned ${Math.round(j)}° within 150 ms before a headshot`); }
     const pe = tr.entries.filter((e) => e.t < T).map((e) => [...e.p.map(r2), ...e.n]);   // walls the bullet punched through (impact marks)
     this.broadcast('fx', { id: p.id, w: wk, o: o.map(r2), e: end, h: best ? 1 : tr.end.n ? 2 : 0, n: tr.end.n, pe: pe.length ? pe : undefined, wb: best && best.wb ? 1 : undefined }, p.bot ? null : p.id);
     if (best) {
@@ -403,7 +417,7 @@ export class GameRoom {
     if (this.bomb.defuser === v.id) this.bomb.defuser = null;
     let assist = null;
     if (a && a !== v) {
-      if (a.team !== v.team) { if (this.mode === 'dm') this.score[a.team]++; a.k++; this.stat(a, 'k', 1, WEAPONS[wk] ? wk : null); if (hs) this.stat(a, 'hs'); if (wb) this.stat(a, 'wb'); a.money = Math.min(ECON.max, a.money + (WEAPONS[wk] ? WEAPONS[wk].reward : 300)); if(!a.bot) this.addXp(this.keyOf(a), this.mode === 'dm' ? (hs ? 30 : 25) : (hs ? 120 : 100)); this.applyProfile(a); }
+      if (a.team !== v.team) { if (this.mode === 'dm') this.score[a.team]++; a.k++; this.stat(a, 'k', 1, WEAPONS[wk] ? wk : null); this.ac.kill(a, hs, wk); if (hs) this.stat(a, 'hs'); if (wb) this.stat(a, 'wb'); a.money = Math.min(ECON.max, a.money + (WEAPONS[wk] ? WEAPONS[wk].reward : 300)); if(!a.bot) this.addXp(this.keyOf(a), this.mode === 'dm' ? (hs ? 30 : 25) : (hs ? 120 : 100)); this.applyProfile(a); }
       else { a.k--; a.money = Math.max(0, a.money - ECON.teamKillPenalty); }
       a.youDirty = true;
     }
@@ -770,6 +784,7 @@ export class GameRoom {
     if (!p || p.bot || !s) return; const now = Date.now();
     const yaw = Number(s.yaw), pitch = Number(s.pitch);
     if (Number.isFinite(yaw)) p.yaw = yaw; if (Number.isFinite(pitch)) p.pitch = clamp(pitch, -1.55, 1.55);
+    this.ac.aim(p, now);
     if (!p.alive || (s.cid | 0) !== p.cid) return;
     const x = Number(s.x), y = Number(s.y), z = Number(s.z); if (![x, y, z].every(Number.isFinite)) return;
     const dt = clamp((now - (p.lastSt || now - 50)) / 1000, 0.016, 1); p.lastSt = now;
@@ -783,9 +798,9 @@ export class GameRoom {
     }
     if (this.phase === 'freeze' && Math.hypot(x - p.spawnX, z - p.spawnZ) > 1.0) return this.correct(p);
     const d = Math.hypot(x - p.x, z - p.z);
-    if (d > 8.5 * dt + 0.9) return this.correct(p);
-    if (!canOccupy(this.map, x, z, y + 0.06, p.crouch ? PHYS.crouchHeight : PHYS.height, 0.3)) return this.correct(p);
-    const g = groundAt(this.map, x, z, 0.3); if (y > g + 3.2 || y < g - 0.8) return this.correct(p);
+    if (d > 8.5 * dt + 0.9) { this.ac.record(p, 'speed', 1, `moved ${d.toFixed(1)} m in ${Math.round(dt * 1000)} ms`); return this.correct(p); }
+    if (!canOccupy(this.map, x, z, y + 0.06, p.crouch ? PHYS.crouchHeight : PHYS.height, 0.3)) { this.ac.record(p, 'wall', 1, 'position inside a wall'); return this.correct(p); }
+    const g = groundAt(this.map, x, z, 0.3); if (y > g + 3.2 || y < g - 0.8) { this.ac.record(p, 'fly', 1, `${(y - g).toFixed(1)} m above the ground`); return this.correct(p); }
     p.speed = d / dt; p.x = x; p.y = y; p.z = z;
     p.hist.push({ t: now, x, y, z, c: p.crouch }); while (p.hist.length > 2 && now - p.hist[0].t > 1000) p.hist.shift();
   }
@@ -821,7 +836,7 @@ export class GameRoom {
   // ---------- admin controls ----------
   adminView(p) {
     const cur = p.w && p.w[p.active], mute = this.moderation?.mutes?.[this.keyOf(p)];
-    return { id: p.id, pid: p.pid || '', key: this.keyOf(p), name: p.name, bot: !!p.bot, team: p.team, alive: !!p.alive,
+    return { id: p.id, pid: p.pid || '', key: this.keyOf(p), name: p.name, bot: !!p.bot, team: p.team, alive: !!p.alive, flags: p.ac && p.ac.flags ? p.ac.flags.length : 0,
       hp: Math.round(p.hp), maxHp: p.maxHp || 100, armor: Math.round(p.armor), helmet: !!p.helmet, kit: !!p.kit, money: Math.round(p.money), k: p.k, d: p.d, a: p.a, xp:p.rankXp, rank:p.rankName, rankTag:p.rankTag,
       ping: p.ping, bomb: !!p.hasBomb, noclip: !!p.noclip, god: !!p.god, weapon: cur ? cur.k : null, muted: !!mute, x: r2(p.x), y: r2(p.y), z: r2(p.z) };
   }
@@ -892,13 +907,14 @@ export class GameRoom {
       case 'mode': if (!['comp', 'dm'].includes(value)) return {ok:false,error:'bad_mode'}; this.mode = value; this.startMatch('Admin changed the mode'); return {ok:true};
       case 'restart': this.startRound('Admin restarted the round'); return {ok:true};
       case 'newmatch': this.startMatch('Admin started a new match'); return {ok:true};
-      case 'map': { const id = String(value || ''); if (!MAP_DEFS[id]) return {ok:false,error:'bad_map'}; if (id !== this.mapId) this.changeMap(id); this.startMatch('Admin changed the map'); return {ok:true}; }
+      case 'map': { const id = String(value || ''); if (!MAP_DEFS[id]) return {ok:false,error:'bad_map'}; if (id !== this.mapId) this.changeMap(id); this.defaultMap = id; this.startMatch('Admin changed the map'); return {ok:true}; }
       case 'bots': this.botMode = value === 'none' ? 'none' : 'fill'; this.fillBots(); this.rosterDirty=true; return {ok:true};
       case 'difficulty': if (!['easy','normal','hard'].includes(value)) return {ok:false,error:'bad_difficulty'}; this.difficulty=value; return {ok:true};
       case 'max': this.maxPlayers=clamp(Number(value)||10,2,16); this.fillBots(); return {ok:true};
       case 'weaponLimit': { const v=value||{}; const k=String(v.weapon||''); if(!['awp','sg553','aug'].includes(k)) return {ok:false,error:'bad_weapon'}; this.weaponLimits[k]=clamp(Number(v.limit)||0,0,8); return {ok:true}; }
       case 'vote': { const v=value||{}; if(!['restart','mute','kick'].includes(String(v.kind||''))) return {ok:false,error:'bad_vote'}; return this.startVote(v.kind,v.value,'ADMIN'); }
       case 'voice': if (!['team', 'all', 'off'].includes(value)) return {ok:false,error:'bad_mode'}; this.voiceMode = value; this.broadcast('msg', { text: 'Voice chat: ' + value, sub: 'ADMIN' }); return {ok:true};
+      case 'filter': if (!['on', 'off'].includes(value)) return {ok:false,error:'bad_value'}; this.chatFilter = value === 'on'; return {ok:true};
       case 'say': { const msg=String(value||'').replace(/[<>]/g,'').slice(0,160); if(msg) this.broadcast('msg',{text:msg,sub:'ADMIN'}); return {ok:true}; }
       case 'clean': this.drops.clear(); this.broadcast('drops', []); return {ok:true};
       case 'healall': for (const p of this.list) if (p.alive) { p.hp = p.maxHp || 100; p.youDirty = true; } this.rosterDirty = true; return {ok:true};
@@ -924,7 +940,21 @@ export class GameRoom {
       case 'voice': return this.voiceFrame(p, d);
       case 'chat': {
         const msg = String(d && d.msg || '').replace(/[<>]/g, '').slice(0, 120).trim(); if (!msg) return;
-        if (this.moderation?.mutes?.[this.keyOf(p)]) return; const pkt = { id, name: p.name, team: p.team, msg, teamOnly: !!(d && d.team), dead: !p.alive, chatColor:'gold' };
+        if (this.moderation?.mutes?.[this.keyOf(p)]) return;
+        { // spam control + profanity filter (the sender is told why the message did not go out)
+          const now = Date.now(), cs = (p.chatS ||= { t: [], last: '', lastT: 0, rep: 0, muteUntil: 0, strikes: [] }), tell = (m) => this.send(p.id, 'chat', { sys: true, msg: m });
+          if (now < cs.muteUntil) { tell(`چت تو تا ${Math.ceil((cs.muteUntil - now) / 1000)} ثانیهٔ دیگر بسته است`); return; }
+          cs.t = cs.t.filter((x) => now - x < 4000); cs.t.push(now);
+          if (cs.t.length > 5) { cs.muteUntil = now + 30000; cs.t = []; tell('به‌خاطر ارسال پشت‌سرهم، چت تو ۳۰ ثانیه بسته شد'); return; }
+          if (msg === cs.last && now - cs.lastT < 20000) { if (++cs.rep >= 2) return; } else cs.rep = 0;
+          cs.last = msg; cs.lastT = now;
+          if (this.chatFilter && isBad(msg)) {
+            cs.strikes = cs.strikes.filter((x) => now - x < 120000); cs.strikes.push(now);
+            if (cs.strikes.length >= 3) { cs.muteUntil = now + 60000; cs.strikes = []; tell('به‌خاطر الفاظ نامناسب، چت تو ۶۰ ثانیه بسته شد'); } else tell('پیام تو حاوی الفاظ نامناسب بود و ارسال نشد');
+            return;
+          }
+        }
+        const pkt = { id, name: p.name, team: p.team, msg, teamOnly: !!(d && d.team), dead: !p.alive, chatColor:'gold' };
         if (pkt.teamOnly) this.teamcast(p.team, 'chat', pkt); else this.broadcast('chat', pkt); return;
       }
       case 'pingv': p.ping = clamp(d | 0, 0, 999); return;
@@ -939,7 +969,7 @@ export class GameRoom {
     if (this.map.doors.length) updateDoors(this.map, [...this.players.values()].filter((q) => q.alive), dt);   // auto doors open for whoever is close
     for (const p of [...this.players.values()]) if (p.dc && now - p.dc > 30000) this.removePlayer(p.id);
     if (!this.players.size) return;
-    if (this.mapVote && this.phase === 'over' && this.matchOver && now >= this.mapVote.minEnd) { const hs = this.humans(); if (hs.length && hs.every((h) => this.mapVote.votes.has(h.id))) this.phaseEnd = now; }   // everybody voted: don't wait
+    if (this.mapVote && this.phase === 'over' && this.matchOver && now >= this.mapVote.minEnd) { const hs = this.humans().filter((h) => !h.dc); if (hs.length && hs.every((h) => this.mapVote.votes.has(this.keyOf(h)))) this.phaseEnd = now; }   // everybody voted: don't wait
     if (this.phase === 'warmup') {
       if (this.bothTeams() && this.humans().some((p) => p.team !== 'SPEC')) {
         if (!this.matchStartAt) { this.matchStartAt = now + 4000; this.broadcast('msg', { text: 'Match is starting', sub: 'Get ready' }); }

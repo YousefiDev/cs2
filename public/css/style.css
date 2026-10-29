@@ -793,3 +793,7 @@ body.spawn-prot #hud::after { content: ''; position: absolute; inset: 0; pointer
 .st-w i { position: absolute; inset: 0 auto 0 0; background: rgba(240, 169, 96, .22); } .st-w span, .st-w b { position: relative; }
 .st-login { text-align: center; padding: 24px 8px; } .st-login .cta { margin-top: 10px; }
 @media (max-width: 600px) { .st-cards { grid-template-columns: repeat(2, 1fr); } .hide-s { display: none; } }
+
+/* ---- report window ---- */
+.auth-card textarea { padding: 10px 12px; border-radius: 11px; border: 1px solid rgba(255, 255, 255, .16); background: #0a0d12; color: #fff; font: inherit; resize: vertical; outline: none; } .auth-card textarea:focus, .auth-card select:focus { border-color: var(--accent, #e59a52); }
+.auth-card select { padding: 10px 12px; border-radius: 11px; border: 1px solid rgba(255, 255, 255, .16); background: #0a0d12; color: #fff; font: inherit; outline: none; }

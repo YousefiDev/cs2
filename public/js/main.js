@@ -10,6 +10,7 @@ import { TouchEditor, normalizeLayout, applyLayout, setupGate } from './touchui.
 import { ServerBrowser, buildMapPicker, mapLabel } from './lobby.js';
 import { AuthUI } from './auth.js';
 import { StatsUI } from './stats.js';
+import { ReportUI } from './report.js';
 import { Keybinds, ACTIONS, GROUPS, codeLabel, RESERVED } from './keybinds.js';
 import { VoiceChat } from './voice.js';
 
@@ -75,6 +76,8 @@ const netCall = (ev, d) => new Promise((res) => (net && net.connected() ? net.em
 const auth = new AuthUI({ call: netCall });
 // Statistics + leaderboards (per account, kept on the server)
 const stats = new StatsUI({ call: netCall, account: () => auth.account, openLogin: () => auth.open('login') });
+const report = new ReportUI({ call: netCall, roster: () => game.roster || [], meId: () => game.meId, onClose: () => game.setMenuPaused(false) });
+$('p-report').addEventListener('click', () => { $('pause').hidden = true; report.open(); });
 $('open-stats').addEventListener('click', async () => { try { await ensureOnline(); } catch (e) { setStatus('bad', 'اتصال به سرور برقرار نیست'); return; } stats.open('board'); });
 $('name').value = settings.name || '';
 $('name').addEventListener('input', () => { settings.name = $('name').value.trim().slice(0, 16); save(); });

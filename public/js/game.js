@@ -680,7 +680,7 @@ export class Game {
     const touchLayer = $('touch');
     if (touchLayer && !document.body.classList.contains('ui-editing')) touchLayer.classList.toggle('touch-dead', !this.alive);
     if (this.alive) $('death').hidden = true;
-    const modal = this.buyOpen || this.chatOpen || !$('pause').hidden || !$('teamsel').hidden || !$('settings').hidden || !$('mapvote').hidden;
+    const modal = this.buyOpen || this.chatOpen || !$('pause').hidden || !$('teamsel').hidden || !$('settings').hidden || !$('mapvote').hidden || !$('reportbox').hidden;
     if (modal !== this._modal) { this._modal = modal; document.body.classList.toggle('ui-modal', modal); }
     $('clickplay').hidden = this.locked || this.touch || !$('teamsel').hidden || this.buyOpen || !$('pause').hidden || !this.inRoom;
     if (this.buyOpen && !this.canBuy()) this.toggleBuy(false);
@@ -717,7 +717,7 @@ export class Game {
   onKeyDown(e) {
     if (!this.inRoom) return;
     if (this.chatOpen) { if (e.code === 'Enter') { e.preventDefault(); this.sendChat(); } else if (e.code === 'Escape') this.closeChat(); return; }
-    if (!$('teamsel').hidden || !$('settings').hidden || !$('mapvote').hidden) return;
+    if (!$('teamsel').hidden || !$('settings').hidden || !$('mapvote').hidden || !$('reportbox').hidden) return;
     const acts = this.binds.actionsFor(e.code);
     if (acts.includes('scoreboard')) { e.preventDefault(); this.sbOpen = true; this.hud.scoreboard(true, this.roster, this.meId, this.score, this.room); return; }
     if (e.repeat) return;

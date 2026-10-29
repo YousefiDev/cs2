@@ -20,6 +20,7 @@ export class MapVote {
     this.grid.innerHTML = d.options.map((o) => `<button class="mv-opt" data-id="${esc(o.id)}"><img alt="" draggable="false" src="${mapThumb(o.id)}"><span class="mv-name">${esc(String(o.name).toUpperCase())}</span>${o.id === d.current ? '<span class="mv-cur">الان</span>' : ''}<span class="mv-cnt">0</span></button>`).join('');
     for (const b of this.grid.querySelectorAll('.mv-opt')) b.addEventListener('click', () => this.pick(b.dataset.id));
     const total = Math.max(1, (d.until - this.serverNow()) / 1000); this.until = d.until; this.total = total;
+    if (d.votes) this.tally(d.votes); if (d.mine) { this.mine = d.mine; this.mark(); }       // joined / reconnected during the vote
     this.el.hidden = false; this.tick(); this.timer = setInterval(() => this.tick(), 200);
   }
 

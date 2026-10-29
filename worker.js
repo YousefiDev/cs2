@@ -72,7 +72,7 @@ export class GameServer {
   async boot(env) {
     try {
       const st = this.state.storage;
-      const [custom, legacy, split, accs, sess, stat] = await Promise.all([st.get('customMaps'), st.get('data'), st.list({ prefix: 'd:' }), st.list({ prefix: 'a:' }), st.list({ prefix: 's:' }), st.list({ prefix: 't:' })]);
+      const [custom, legacy, split, accs, sess, stat, reps] = await Promise.all([st.get('customMaps'), st.get('data'), st.list({ prefix: 'd:' }), st.list({ prefix: 'a:' }), st.list({ prefix: 's:' }), st.list({ prefix: 't:' }), st.list({ prefix: 'r:' })]);
       this.customMaps = custom || {};
       this.applyCustomMaps();
       let data = null;
@@ -90,7 +90,8 @@ export class GameServer {
         this.core.ensureDefaultServers(DEFAULT_SERVERS);
       }
       // accounts and login sessions are stored one record per key (a Durable Object value is limited to 128 KiB)
-      this.core.data.accounts = {}; this.core.data.sessions = {}; this.core.data.stats = {};
+      this.core.data.accounts = {}; this.core.data.sessions = {}; this.core.data.stats = {}; this.core.data.reports = {};
+      for (const [k, v] of reps) { this.core.data.reports[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
       for (const [k, v] of stat) { this.core.data.stats[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
       for (const [k, v] of accs) { this.core.data.accounts[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
       for (const [k, v] of sess) { this.core.data.sessions[k.slice(2)] = v; this.lastSaved.set(k, JSON.stringify(v)); }
@@ -104,8 +105,8 @@ export class GameServer {
   async flush() {
     if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = null; }
     const batch = {}, sigs = [], dels = [];
-    for (const [k, v] of Object.entries(this.core.data)) { if (k === 'accounts' || k === 'sessions' || k === 'stats') continue; const j = JSON.stringify(v); if (this.lastSaved.get(k) !== j) { batch['d:' + k] = v; sigs.push([k, j]); } }
-    for (const [m, pre] of [['accounts', 'a:'], ['sessions', 's:'], ['stats', 't:']]) {   // one storage key per account / session
+    for (const [k, v] of Object.entries(this.core.data)) { if (k === 'accounts' || k === 'sessions' || k === 'stats' || k === 'reports') continue; const j = JSON.stringify(v); if (this.lastSaved.get(k) !== j) { batch['d:' + k] = v; sigs.push([k, j]); } }
+    for (const [m, pre] of [['accounts', 'a:'], ['sessions', 's:'], ['stats', 't:'], ['reports', 'r:']]) {   // one storage key per account / session
       const cur = this.core.data[m] || {};
       for (const [id, v] of Object.entries(cur)) { const sk = pre + id, j = JSON.stringify(v); if (this.lastSaved.get(sk) !== j) { batch[sk] = v; sigs.push([sk, j]); } }
       for (const sk of this.lastSaved.keys()) if (sk.startsWith(pre) && !(sk.slice(2) in cur)) dels.push(sk);
@@ -224,6 +225,8 @@ export class GameServer {
         else if (ev === 'admin:list') r = { ok: true, rooms: this.core.adminRooms() };
         else if (ev === 'admin:moderation') r = { ok: true, ...this.core.adminModeration() };
         else if (ev === 'admin:log') r = this.core.adminLogGet();
+        else if (ev === 'admin:reports') r = this.core.adminReports();
+        else if (ev === 'admin:report') { r = this.core.adminReport(d?.action, d?.id); durable = true; }
         else if (ev === 'admin:accounts') r = this.core.adminAccounts();
         else if (ev === 'admin:account') { r = await this.core.adminAccount(d?.action, d?.value); durable = listChanged = true; }
         else if (ev === 'admin:cmd') { r = this.core.adminCommand(d?.code, d?.line); durable = listChanged = true; }   // console: !hp ali 500, !map mirage ...

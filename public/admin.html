@@ -90,6 +90,7 @@ td{padding:8px;border-bottom:1px solid #18222f;vertical-align:middle}tr.pr{curso
       <button data-tab="servers"><i>▣</i>سرورها</button>
       <button data-tab="players"><i>☻</i>بازیکن‌ها</button>
       <button data-tab="accounts"><i>☰</i>حساب‌ها</button>
+      <button data-tab="reports"><i>⚑</i>گزارش‌ها <span id="repBadge" class="chip r" hidden></span></button>
       <button data-tab="mod"><i>⛔</i>بن / میوت</button>
       <button data-tab="rank"><i>★</i>رنک و XP</button>
       <button data-tab="roles"><i>♛</i>نقش‌ها</button>
@@ -150,7 +151,7 @@ td{padding:8px;border-bottom:1px solid #18222f;vertical-align:middle}tr.pr{curso
           <div><label>محدودیت AWP / SG553 / AUG (۰ = بدون محدودیت)</label><div class="kv" style="margin:0"><div><input id="limAwp" type="number" min="0" max="8" placeholder="AWP"></div><div><input id="limSg" type="number" min="0" max="8" placeholder="SG"></div><div><input id="limAug" type="number" min="0" max="8" placeholder="AUG"></div><button id="limGo">ثبت</button></div></div>
           <div><label>پیام به همهٔ بازیکن‌ها</label><div class="kv" style="margin:0"><div><input id="sayIn" placeholder="Admin message"></div><button class="pri" id="sayGo">ارسال</button></div></div>
         </div>
-        <div class="row"><div><label>مود بازی (مسابقه از اول شروع می‌شود)</label><select id="modeSel"><option value="comp">Competitive</option><option value="dm">Team Deathmatch</option></select></div><div><label>وویس چت</label><select id="voiceSel"><option value="team">فقط هم‌تیمی (پیش‌فرض)</option><option value="all">همه با همه</option><option value="off">خاموش</option></select></div><div><label>رأی‌گیری (Vote)</label><select id="voteKind"><option value="restart">Restart</option><option value="kick">Kick</option><option value="mute">Mute</option></select></div><div><label>بازیکن هدف (برای Kick/Mute)</label><select id="voteTarget"></select></div><button id="voteGo">شروع Vote</button></div>
+        <div class="row"><div><label>فیلتر فحش در چت</label><select id="filterSel"><option value="on">روشن</option><option value="off">خاموش</option></select></div><div><label>مود بازی (مسابقه از اول شروع می‌شود)</label><select id="modeSel"><option value="comp">Competitive</option><option value="dm">Team Deathmatch</option></select></div><div><label>وویس چت</label><select id="voiceSel"><option value="team">فقط هم‌تیمی (پیش‌فرض)</option><option value="all">همه با همه</option><option value="off">خاموش</option></select></div><div><label>رأی‌گیری (Vote)</label><select id="voteKind"><option value="restart">Restart</option><option value="kick">Kick</option><option value="mute">Mute</option></select></div><div><label>بازیکن هدف (برای Kick/Mute)</label><select id="voteTarget"></select></div><button id="voteGo">شروع Vote</button></div>
       </div>
     </section>
 
@@ -172,6 +173,15 @@ td{padding:8px;border-bottom:1px solid #18222f;vertical-align:middle}tr.pr{curso
         </details>
         <div class="tw"><table><thead><tr><th>بازیکن</th><th>HP</th><th>Armor</th><th>Money</th><th>K/D</th><th>سلاح</th><th>Ping</th><th>وضعیت</th></tr></thead><tbody id="pBody"></tbody></table></div>
         <div id="pEmpty" class="empty hidden">بازیکنی پیدا نشد.</div>
+      </div>
+    </section>
+
+    <!-- ===== Reports ===== -->
+    <section id="tab-reports" class="hidden">
+      <div class="panel">
+        <div class="filters" id="repF"><button class="fbtn on" data-rf="open">باز</button><button class="fbtn" data-rf="cheat">تقلب</button><button class="fbtn" data-rf="chat">رفتار / چت</button><button class="fbtn" data-rf="auto">خودکار (ضدتقلب)</button><button class="fbtn" data-rf="all">همه</button><button id="repClear" style="margin-right:auto">پاک‌کردن بسته‌شده‌ها</button></div>
+        <div id="repList" class="list"></div>
+        <div class="notice">هشدار خودکار فقط «شواهد» است، نه حکم: پرش ناگهانی یا لگ هم می‌تواند شبیه تقلب باشد. اول شواهد را ببین، بعد تصمیم بگیر. سیستم هیچ‌کس را خودش بن نمی‌کند.</div>
       </div>
     </section>
 
@@ -234,7 +244,7 @@ td{padding:8px;border-bottom:1px solid #18222f;vertical-align:middle}tr.pr{curso
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const WEAPONS=[['ak47','AK-47'],['m4a4','M4A4'],['m4a1s','M4A1-S'],['awp','AWP'],['deagle','Desert Eagle'],['glock','Glock-18'],['usp','USP-S'],['p2000','P2000'],['p250','P250'],['tec9','Tec-9'],['fiveseven','Five-SeveN'],['cz75','CZ75-Auto'],['elite','Dual Berettas'],['r8','R8 Revolver'],['galil','Galil AR'],['famas','FAMAS'],['sg553','SG 553'],['aug','AUG'],['mac10','MAC-10'],['mp9','MP9'],['mp7','MP7'],['mp5sd','MP5-SD'],['ump45','UMP-45'],['p90','P90'],['bizon','PP-Bizon'],['ssg08','SSG 08'],['g3sg1','G3SG1'],['scar20','SCAR-20'],['nova','Nova'],['xm1014','XM1014'],['sawedoff','Sawed-Off'],['mag7','MAG-7'],['m249','M249'],['negev','Negev'],['zeus','Zeus x27'],['he','HE Grenade'],['flash','Flashbang'],['smoke','Smoke'],['molotov','Molotov'],['incendiary','Incendiary'],['decoy','Decoy']];
-const TITLES={dash:['داشبورد','وضعیت زندهٔ سرورها و بازیکن‌ها'],servers:['سرورها','ساخت، روشن/خاموش و تنظیمات هر سرور'],players:['بازیکن‌ها','روی یک بازیکن کلیک کن تا همهٔ عملیات باز شود'],accounts:['حساب‌ها','کاربران ثبت‌نام‌شده؛ هر بازیکن یک آیدی عددی یکتا دارد'],mod:['بن / میوت','مدیریت بن‌ها (دائمی و زمان‌دار) و میوت‌ها'],rank:['رنک و XP','XP دائمی بازیکن‌ها'],roles:['نقش‌ها','Owner / Admin / Moderator'],console:['کنسول و لاگ','دستورهای سریع به سبک ادمین سرورهای CS']};
+const TITLES={dash:['داشبورد','وضعیت زندهٔ سرورها و بازیکن‌ها'],servers:['سرورها','ساخت، روشن/خاموش و تنظیمات هر سرور'],players:['بازیکن‌ها','روی یک بازیکن کلیک کن تا همهٔ عملیات باز شود'],reports:['گزارش‌ها','گزارش بازیکن‌ها و هشدارهای خودکار ضدتقلب'],accounts:['حساب‌ها','کاربران ثبت‌نام‌شده؛ هر بازیکن یک آیدی عددی یکتا دارد'],mod:['بن / میوت','مدیریت بن‌ها (دائمی و زمان‌دار) و میوت‌ها'],rank:['رنک و XP','XP دائمی بازیکن‌ها'],roles:['نقش‌ها','Owner / Admin / Moderator'],console:['کنسول و لاگ','دستورهای سریع به سبک ادمین سرورهای CS']};
 
 // ---------- transport (same WebSocket protocol as the game) ----------
 const socket=(()=>{let ws=null,seq=0,retry=0;const ls=new Map(),pending=new Map();
@@ -272,8 +282,8 @@ function renderRooms(){
   const m=S.rooms.find(r=>r.code===S.cur);$('sStart').disabled=!m||m.enabled;$('sStop').disabled=!m||!m.enabled;$('sDel').disabled=!m;
   $('ctlTitle').textContent=m?`${m.title} · ${m.code} · ${m.map}${m.enabled?` · Round ${m.round||0}`:' · OFFLINE'}`:'یک سرور را انتخاب کن';
   document.querySelectorAll('.srv').forEach(x=>x.onclick=()=>pickServer(x.dataset.code));
-  for(const id of ['rRestart','rNew','rClean','rHeal','rResp','rSwap','mapGo','maxGo','limGo','sayGo','voteGo','voiceSel','modeSel'])$(id).disabled=!m||!m.enabled;
-  if(m&&m.enabled){if(document.activeElement!==$('maxIn'))$('maxIn').value=m.max;if(document.activeElement!==$('diffSel'))$('diffSel').value=m.difficulty;if(document.activeElement!==$('voiceSel'))$('voiceSel').value=m.voice||'team';if(document.activeElement!==$('modeSel'))$('modeSel').value=m.mode||'comp';document.querySelectorAll('#botSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===m.botMode));if(document.activeElement!==$('mapSel'))$('mapSel').value=m.map}
+  for(const id of ['rRestart','rNew','rClean','rHeal','rResp','rSwap','mapGo','maxGo','limGo','sayGo','voteGo','voiceSel','modeSel','filterSel'])$(id).disabled=!m||!m.enabled;
+  if(m&&m.enabled){if(document.activeElement!==$('maxIn'))$('maxIn').value=m.max;if(document.activeElement!==$('diffSel'))$('diffSel').value=m.difficulty;if(document.activeElement!==$('voiceSel'))$('voiceSel').value=m.voice||'team';if(document.activeElement!==$('modeSel'))$('modeSel').value=m.mode||'comp';if(document.activeElement!==$('filterSel'))$('filterSel').value=m.filter===false?'off':'on';document.querySelectorAll('#botSeg button').forEach(b=>b.classList.toggle('on',b.dataset.v===m.botMode));if(document.activeElement!==$('mapSel'))$('mapSel').value=m.map}
 }
 function pickServer(code){S.cur=code;S.sig='';S.players=[];S.sel=null;closeDrawer();renderRooms();loadRoom()}
 async function loadRoom(){if(!S.cur)return;const meta=S.rooms.find(x=>x.code===S.cur);if(meta&&!meta.enabled){S.players=[];renderPlayers();return}
@@ -285,7 +295,7 @@ function fillTargets(){const v=$('voteTarget').value;$('voteTarget').innerHTML=S
 // ---------- players ----------
 function visible(){const q=S.q.toLowerCase();return S.players.filter(p=>{if(S.filter==='T'&&p.team!=='T')return false;if(S.filter==='CT'&&p.team!=='CT')return false;if(S.filter==='SPEC'&&p.team!=='SPEC')return false;if(S.filter==='human'&&p.bot)return false;if(S.filter==='bot'&&!p.bot)return false;if(q&&!(String(p.name).toLowerCase().includes(q)||String(p.id).toLowerCase().includes(q)))return false;return true})}
 function hpCell(p){const m=Math.max(100,p.maxHp||100),pct=Math.max(0,Math.min(100,(p.hp/m)*100)),cls=p.hp>100?'hi':p.hp<=25?'lo':'';return `<span class="num" style="min-width:34px">${p.hp}</span><span class="hpbar ${cls}"><i style="width:${pct}%"></i></span>`}
-function chips(p){return [p.god?'<span class="chip g">GOD</span>':'',p.noclip?'<span class="chip b">NOCLIP</span>':'',p.muted?'<span class="chip r">MUTE</span>':'',p.bomb?'<span class="chip r">C4</span>':'',p.kit?'<span class="chip b">KIT</span>':'',p.hp>100?'<span class="chip g">HP+</span>':''].join('')}
+function chips(p){return [p.god?'<span class="chip g">GOD</span>':'',p.noclip?'<span class="chip b">NOCLIP</span>':'',p.muted?'<span class="chip r">MUTE</span>':'',p.bomb?'<span class="chip r">C4</span>':'',p.kit?'<span class="chip b">KIT</span>':'',p.hp>100?'<span class="chip g">HP+</span>':'',p.flags?`<span class="chip r">⚠${p.flags}</span>`:''].join('')}
 function renderPlayers(){const list=visible();$('pCount').textContent=`${list.length} / ${S.players.length}`;$('pEmpty').classList.toggle('hidden',!!list.length);
   $('pBody').innerHTML=list.map(p=>`<tr class="pr ${p.id===S.sel?'sel':''} ${p.alive?'':'dead'}" data-id="${esc(p.id)}"><td><span class="tm ${p.team}"></span><b>${esc(p.name)}</b> ${p.bot?'<span class="chip">BOT</span>':''}<div style="color:var(--mut);font-size:10px">${esc(p.rank||'')} ${p.team}${p.pid?` · <span dir="ltr">ID ${esc(p.pid)}</span>`:p.bot?'':' · guest'}</div></td><td>${p.alive?hpCell(p):'<span class="chip r">DEAD</span>'}</td><td><span class="num">${p.armor}</span></td><td><span class="num">$${p.money}</span></td><td><span class="num">${p.k}/${p.d}</span></td><td>${esc(p.weapon||'—')}</td><td><span class="num">${p.ping||0}</span></td><td>${chips(p)}</td></tr>`).join('');
   document.querySelectorAll('#pBody tr').forEach(tr=>tr.onclick=()=>openDrawer(tr.dataset.id))}
@@ -356,10 +366,31 @@ const room=(action,value,ok)=>S.cur&&call('admin:room',{code:S.cur,action,value}
 $('rRestart').onclick=()=>room('restart');$('rNew').onclick=()=>confirm('مسابقهٔ جدید شروع شود؟')&&room('newmatch');$('rClean').onclick=()=>room('clean');$('rHeal').onclick=()=>room('healall');$('rResp').onclick=()=>room('respawnall');$('rSwap').onclick=()=>room('swapteams');
 $('mapGo').onclick=()=>confirm('مپ عوض شود و مسابقه از اول شروع شود؟')&&room('map',$('mapSel').value,'✓ مپ عوض شد');
 document.querySelectorAll('#botSeg button').forEach(b=>b.onclick=()=>room('bots',b.dataset.v));
-$('diffSel').onchange=()=>room('difficulty',$('diffSel').value);$('modeSel').onchange=()=>{if(confirm('مود عوض شود و مسابقه از اول شروع شود؟'))room('mode',$('modeSel').value,'✓ مود: '+$('modeSel').value);else renderRooms()};$('voiceSel').onchange=()=>room('voice',$('voiceSel').value,'✓ وویس چت: '+$('voiceSel').value);$('maxGo').onclick=()=>room('max',Number($('maxIn').value));
+$('diffSel').onchange=()=>room('difficulty',$('diffSel').value);$('filterSel').onchange=()=>room('filter',$('filterSel').value,'✓ فیلتر چت: '+$('filterSel').value);$('modeSel').onchange=()=>{if(confirm('مود عوض شود و مسابقه از اول شروع شود؟'))room('mode',$('modeSel').value,'✓ مود: '+$('modeSel').value);else renderRooms()};$('voiceSel').onchange=()=>room('voice',$('voiceSel').value,'✓ وویس چت: '+$('voiceSel').value);$('maxGo').onclick=()=>room('max',Number($('maxIn').value));
 $('limGo').onclick=async()=>{for(const [id,w] of [['limAwp','awp'],['limSg','sg553'],['limAug','aug']]){const v=$(id).value;if(v!=='')await call('admin:room',{code:S.cur,action:'weaponLimit',value:{weapon:w,limit:Number(v)}})}toast('✓ محدودیت‌ها ثبت شد','ok')};
 $('sayGo').onclick=()=>{const m=$('sayIn').value.trim();if(m){room('say',m,'✓ ارسال شد');$('sayIn').value=''}};$('sayIn').onkeydown=e=>{if(e.key==='Enter')$('sayGo').click()};
 $('voteGo').onclick=()=>room('vote',{kind:$('voteKind').value,value:$('voteTarget').value},'✓ Vote شروع شد');
+
+// ---------- reports ----------
+S.reports=[];S.repFilter='open';
+const REASON={cheat:'تقلب',toxic:'توهین / رفتار',grief:'خرابکاری',other:'دیگر'},AUTOT={speed:'سرعت غیرعادی',wall:'عبور از دیوار',fly:'پرواز',snap:'پرش ناگهانی نشانه‌گیری',aim:'هدشات غیرعادی'};
+async function loadReports(){const r=await call('admin:reports');if(!r?.ok)return;S.reports=r.reports||[];const n=r.openCount||0;$('repBadge').hidden=!n;$('repBadge').textContent=n;if(S.tab==='reports')renderReports()}
+function renderReports(){const f=S.repFilter,list=S.reports.filter(r=>f==='open'?r.status==='open':f==='cheat'?r.reason==='cheat':f==='chat'?(r.reason==='toxic'||r.reason==='grief'):f==='auto'?!!r.auto:true);
+  $('repList').innerHTML=list.map(r=>{const e=r.ev||{},fl=(e.flags||[]).map(x=>(AUTOT[x.kind]||x.kind)).join('، ');
+    const open=r.status==='open';
+    return `<div class="item rp" style="align-items:flex-start;${open?'':'opacity:.55'}"><div style="flex:1;min-width:0"><b>${esc(r.target.nick)}</b> ${r.target.pid?`<span class="num" style="color:var(--mut)">ID ${esc(r.target.pid)}</span>`:'<span class="chip">guest</span>'} ${r.online?'<span class="chip g">ONLINE</span>':''} ${r.same>1&&open?`<span class="chip r">×${r.same} گزارش باز</span>`:''} ${open?'':`<span class="chip">${r.status==='handled'?'بررسی شد':'رد شد'}</span>`}
+      <small>${REASON[r.reason]||r.reason}${r.auto?` · <span class="chip b">AUTO · ${AUTOT[r.auto]||r.auto}${r.n>1?' ×'+r.n:''}</span>`:''} · ${r.from.sys?'سیستم':'توسط '+esc(r.from.nick)} · ${ago(r.t)} · ${esc(r.room)} · ${esc(r.map)}${r.mode==='dm'?' · DM':''}</small>
+      ${r.note?`<div style="margin:6px 0;padding:6px 9px;border-radius:8px;background:#0a1017;font-size:12px">${esc(r.note)}</div>`:''}
+      <small>K/D ${e.k||0}/${e.d||0} · هدشات ${e.mhs||0}/${e.mk||0} · ping ${e.ping||0}${fl?` · ⚠ ${esc(fl)}`:''}</small></div>
+      <div class="btnrow" style="flex-wrap:wrap;max-width:260px;justify-content:flex-end">${open?`<button class="dng" data-rp="ban" data-id="${r.id}">Ban</button>${r.online?`<button data-rp="kick" data-id="${r.id}">Kick</button><button data-rp="mute" data-id="${r.id}">Mute</button>`:''}<button class="ok" data-rp="handled" data-id="${r.id}">✓ بررسی شد</button><button data-rp="dismissed" data-id="${r.id}">✕ رد</button>`:`<button data-rp="delete" data-id="${r.id}">حذف</button>`}</div></div>`}).join('')||'<div class="empty">گزارشی در این بخش نیست 🎉</div>'}
+document.querySelectorAll('#repF .fbtn').forEach(b=>b.onclick=()=>{S.repFilter=b.dataset.rf;document.querySelectorAll('#repF .fbtn').forEach(x=>x.classList.toggle('on',x===b));renderReports()});
+$('repClear').onclick=async()=>{if(!confirm('همهٔ گزارش‌های بررسی‌شده و ردشده پاک شوند؟'))return;await call('admin:report',{action:'clearclosed'});loadReports()};
+document.addEventListener('click',async e=>{const b=e.target.closest&&e.target.closest('button[data-rp]');if(!b)return;const r=S.reports.find(x=>x.id===b.dataset.id);if(!r)return;const act=b.dataset.rp;let res;
+  if(act==='ban'){const m=prompt('مدت بن برای '+r.target.nick+' (دقیقه؛ ۰ = دائمی):','0');if(m===null)return;res=await call('admin:global',{action:'ban',value:{name:r.target.key,minutes:Number(m)||0,reason:'Report: '+(REASON[r.reason]||r.reason)}});if(res?.ok)await call('admin:report',{action:'handled',id:r.id})}
+  else if(act==='kick'){res=await call('admin:player',{code:r.online.room,id:r.online.id,action:'kick',value:true});if(res?.ok)await call('admin:report',{action:'handled',id:r.id})}
+  else if(act==='mute'){res=await call('admin:player',{code:r.online.room,id:r.online.id,action:'mute',value:true});if(res?.ok)await call('admin:report',{action:'handled',id:r.id})}
+  else res=await call('admin:report',{action:act,id:r.id});
+  toast(res?.ok?'✓':errTxt(res?.error),res?.ok?'ok':'er');loadReports();loadRooms()});
 
 // ---------- accounts ----------
 const ago=t=>{if(!t)return '—';const m=Math.round((Date.now()-t)/60000);return m<1?'همین الان':m<60?m+' دقیقه پیش':m<1440?Math.round(m/60)+' ساعت پیش':Math.round(m/1440)+' روز پیش'};
@@ -396,14 +427,14 @@ async function loadLog(){const r=await call('admin:log');if(!r?.ok)return;const 
 $('con').innerHTML='<div class="inf">دستورها: !help — هدف: id، بخشی از نام، یا @all @t @ct @spec @bots @humans @alive @dead</div>';
 
 // ---------- tabs / maps / auth ----------
-function setTab(t){S.tab=t;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));for(const x of ['dash','servers','players','accounts','mod','rank','roles','console'])$('tab-'+x).classList.toggle('hidden',x!==t);
-  $('pageTitle').textContent=TITLES[t][0];$('pageSub').textContent=TITLES[t][1];if(['mod','rank','roles','dash'].includes(t))loadModeration();if(t==='accounts')loadAccounts();if(['console','dash'].includes(t))loadLog();if(t!=='players')closeDrawer()}
+function setTab(t){S.tab=t;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));for(const x of ['dash','servers','players','reports','accounts','mod','rank','roles','console'])$('tab-'+x).classList.toggle('hidden',x!==t);
+  $('pageTitle').textContent=TITLES[t][0];$('pageSub').textContent=TITLES[t][1];if(['mod','rank','roles','dash'].includes(t))loadModeration();if(t==='accounts')loadAccounts();if(t==='reports')loadReports();if(['console','dash'].includes(t))loadLog();if(t!=='players')closeDrawer()}
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
 $('serverPick').onchange=()=>pickServer($('serverPick').value);$('refresh').onclick=()=>{S.sig='';loadRooms();loadModeration();loadLog()};
 $('pq').oninput=()=>{S.q=$('pq').value;renderPlayers()};document.querySelectorAll('#pf .fbtn').forEach(b=>b.onclick=()=>{S.filter=b.dataset.f;document.querySelectorAll('#pf .fbtn').forEach(x=>x.classList.toggle('on',x===b));renderPlayers()});
 async function loadMapOptions(){try{const l=await (await fetch('/api/maps/list',{cache:'no-store'})).json();if(Array.isArray(l)&&l.length){const opts=l.map(m=>`<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');for(const id of ['srvMap','mapSel']){const v=$(id).value;$(id).innerHTML=opts;if(l.some(m=>m.id===v))$(id).value=v}}}catch(e){}}
 function setStatus(ok,msg){$('dot').classList.toggle('on',ok);$('status').textContent=msg}
-async function login(key){const r=await call('admin:auth',key);if(r?.ok){S.authed=true;S.key=key;try{sessionStorage.setItem('adm',key)}catch{}$('auth').classList.add('hidden');setStatus(true,'متصل و مجاز');loadMapOptions();loadRooms();loadModeration();loadLog();return true}
+async function login(key){const r=await call('admin:auth',key);if(r?.ok){S.authed=true;S.key=key;try{sessionStorage.setItem('adm',key)}catch{}$('auth').classList.add('hidden');setStatus(true,'متصل و مجاز');loadMapOptions();loadReports();loadRooms();loadModeration();loadLog();return true}
   $('authmsg').textContent=r?.error==='too_many_attempts'?'تلاش بیش از حد؛ یک دقیقه صبر کن.':'کلید اشتباه است.';try{sessionStorage.removeItem('adm')}catch{}return false}
 $('login').onclick=()=>login($('key').value);$('key').onkeydown=e=>{if(e.key==='Enter')login($('key').value)};
 $('logout').onclick=()=>{try{sessionStorage.removeItem('adm')}catch{}location.reload()};
@@ -411,7 +442,7 @@ socket.on('connect',async()=>{const k=S.key||(()=>{try{return sessionStorage.get
 socket.on('disconnect',()=>{S.authed=false;setStatus(false,'اتصال قطع شد؛ در حال اتصال مجدد…')});
 let chT=0;socket.on('admin:changed',()=>{clearTimeout(chT);chT=setTimeout(()=>{S.sig='';loadRooms()},150)});
 setInterval(()=>{if(S.authed&&S.cur&&!document.hidden&&['players','servers','dash'].includes(S.tab))loadRoom()},2000);
-setInterval(()=>{if(S.authed&&!document.hidden){loadRooms();if(['console','dash'].includes(S.tab))loadLog()}},6000);
+setInterval(()=>{if(S.authed&&!document.hidden){loadReports();loadRooms();if(['console','dash'].includes(S.tab))loadLog()}},6000);
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDrawer()});
 </script>
 </body>

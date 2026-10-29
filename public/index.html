@@ -28,6 +28,17 @@
 <div id="flashed" aria-hidden="true"></div>
 
 <!-- ================= LOBBY ================= -->
+<div id="reportbox" class="authbox" hidden dir="rtl">
+  <div class="auth-card">
+    <div class="auth-top"><h2>گزارش بازیکن</h2><button id="rp-close" class="icon-btn" aria-label="بستن">✕</button></div>
+    <label><span>بازیکن</span><select id="rp-target"></select></label>
+    <label><span>دلیل</span><select id="rp-reason"><option value="cheat">تقلب (هک، ایم‌بات، والهک …)</option><option value="toxic">توهین یا رفتار نامناسب در چت / وویس</option><option value="grief">خرابکاری (تیم‌کیل عمدی، بلاک‌کردن هم‌تیمی …)</option><option value="other">موارد دیگر</option></select></label>
+    <label><span>توضیح <em>(اختیاری)</em></span><textarea id="rp-note" maxlength="200" rows="3"></textarea></label>
+    <p id="rp-msg" class="au-msg"></p>
+    <button id="rp-go" class="cta big-cta">ارسال گزارش</button>
+    <p class="au-note">گزارش فقط برای ادمین‌ها دیده می‌شود. گزارش‌های الکی می‌تواند برای خودت محدودیت بیاورد.</p>
+  </div>
+</div>
 <div id="statsbox" class="authbox" hidden dir="rtl">
   <div class="auth-card stats-card">
     <div class="auth-top"><h2>آمار و برترین‌ها</h2><button id="st-close" class="icon-btn" aria-label="بستن">✕</button></div>
@@ -197,6 +208,7 @@
       <div class="pause-status">بازی متوقف شد</div><button id="p-resume" class="cta">ادامهٔ بازی</button>
       <button id="p-team" class="ghost">تغییر تیم</button>
       <button id="p-settings" class="ghost">تنظیمات و کنترل‌ها</button>
+      <button id="p-report" class="ghost">⚑ گزارش بازیکن</button>
       <button id="p-uiedit" class="ghost touch-only">✥ UI Editor · جابه‌جایی دکمه‌ها</button>
       <button id="p-leave" class="ghost danger">خروج از سرور</button>
       <p class="pause-code" id="p-code" dir="ltr"></p>
