@@ -133,3 +133,36 @@ export function bulletHole() {
   g.addColorStop(0, 'rgba(15,10,5,1)'); g.addColorStop(0.18, 'rgba(25,18,10,0.95)'); g.addColorStop(0.3, 'rgba(70,50,30,0.6)'); g.addColorStop(1, 'rgba(90,70,40,0)');
   x.fillStyle = g; x.fillRect(0, 0, S, S); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
+
+// ---- extra surfaces for the map engine (grass, concrete, asphalt, snow, brick, metal, corrugated) ----
+const hex = (h) => { const n = parseInt(h.replace('#', ''), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+const shade = (h, k) => { const [r, g, b] = hex(h); return `rgb(${Math.max(0, Math.min(255, r * k)) | 0},${Math.max(0, Math.min(255, g * k)) | 0},${Math.max(0, Math.min(255, b * k)) | 0})`; };
+export function surface(kind, base = '#888888', seed = 5) {
+  const S = 512, [c, x] = canvas(S); x.fillStyle = base; x.fillRect(0, 0, S, S); const R = rng(seed);
+  if (kind === 'grass') {
+    noiseLayer(x, S, S, 30, 50, seed, 3);
+    for (let k = 0; k < 2600; k++) { x.strokeStyle = shade(base, 0.7 + R() * 0.7); x.lineWidth = 1; const px = R() * S, py = R() * S; x.beginPath(); x.moveTo(px, py); x.lineTo(px + (R() - 0.5) * 5, py - 3 - R() * 7); x.stroke(); }
+  } else if (kind === 'concrete') {
+    noiseLayer(x, S, S, 18, 34, seed, 3);
+    x.strokeStyle = 'rgba(0,0,0,0.28)'; x.lineWidth = 3; x.strokeRect(1, 1, S - 2, S - 2); x.beginPath(); x.moveTo(S / 2, 0); x.lineTo(S / 2, S); x.moveTo(0, S / 2); x.lineTo(S, S / 2); x.lineWidth = 2; x.stroke();
+    for (let k = 0; k < 14; k++) { x.fillStyle = `rgba(0,0,0,${0.03 + R() * 0.08})`; x.fillRect(R() * S, R() * S, 20 + R() * 100, 10 + R() * 60); }
+  } else if (kind === 'asphalt') {
+    noiseLayer(x, S, S, 34, 30, seed, 1);
+    for (let k = 0; k < 1500; k++) { x.fillStyle = R() < 0.5 ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.22)'; x.fillRect(R() * S, R() * S, 1 + R() * 2, 1 + R() * 2); }
+    x.strokeStyle = 'rgba(0,0,0,0.4)'; x.lineWidth = 1.5; for (let k = 0; k < 4; k++) { x.beginPath(); let px = R() * S, py = R() * S; x.moveTo(px, py); for (let j = 0; j < 7; j++) { px += (R() - 0.5) * 60; py += (R() - 0.5) * 60; x.lineTo(px, py); } x.stroke(); }
+  } else if (kind === 'snow') {
+    noiseLayer(x, S, S, 10, 22, seed, 4);
+    for (let k = 0; k < 500; k++) { x.fillStyle = `rgba(${R() < 0.5 ? '255,255,255' : '150,175,205'},${0.1 + R() * 0.25})`; x.beginPath(); x.arc(R() * S, R() * S, 1 + R() * 3, 0, 7); x.fill(); }
+  } else if (kind === 'brick') {
+    const bh = 32, bw = 96; x.fillStyle = '#4a3a30'; x.fillRect(0, 0, S, S);
+    for (let row = 0; row < S / bh; row++) for (let col = -1; col < S / bw + 1; col++) { const px = col * bw + (row % 2 ? bw / 2 : 0), t = 0.78 + R() * 0.44; x.fillStyle = shade(base, t); x.fillRect(px + 2, row * bh + 2, bw - 4, bh - 4); }
+    noiseLayer(x, S, S, 22, 26, seed, 2);
+  } else if (kind === 'metal') {
+    for (let i = 0; i < 8; i++) { x.fillStyle = shade(base, 0.9 + (i % 2) * 0.12); x.fillRect(i * 64, 0, 64, S); x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(i * 64, 0, 4, S); x.fillStyle = 'rgba(255,255,255,0.12)'; x.fillRect(i * 64 + 4, 0, 3, S); }
+    noiseLayer(x, S, S, 20, 20, seed, 2); for (let k = 0; k < 18; k++) { x.fillStyle = `rgba(120,70,30,${0.06 + R() * 0.12})`; x.fillRect(R() * S, R() * S, 8 + R() * 30, 20 + R() * 120); }
+  } else if (kind === 'grating') {
+    x.fillStyle = '#23272b'; x.fillRect(0, 0, S, S); for (let i = 0; i < 16; i++) for (let j = 0; j < 16; j++) { x.fillStyle = shade(base, 0.8 + R() * 0.3); x.fillRect(i * 32 + 4, j * 32 + 4, 24, 24); }
+    noiseLayer(x, S, S, 14, 14, seed, 2);
+  }
+  return tex(c);
+}

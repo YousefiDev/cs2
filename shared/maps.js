@@ -1,8 +1,10 @@
 // Map definitions. Areas/ramps use design units (x scale) and are carved out of solid rock;
 // crates, roofs, zones and spawns are in meters. North is -z, CT side; T side is +z.
 import { WALL } from './constants.js';
+import { normalizeDef, autoGameplay } from './mapkit.js';
 
-export const MAT = { WALL: 0, SAND: 1, TILE: 2, TUNNEL: 3, CRATE: 4, PLANK: 5, DARK: 6, COBBLE: 7 };
+export const MAT = { WALL: 0, SAND: 1, TILE: 2, TUNNEL: 3, CRATE: 4, PLANK: 5, DARK: 6, COBBLE: 7, GRASS: 8, CONCRETE: 9, METAL: 10, SNOW: 11, ASPHALT: 12 };
+export const MAT_NAMES = ['دیوار', 'ماسه', 'کاشی', 'تونل', 'جعبه', 'تخته', 'تیره', 'سنگ‌فرش', 'چمن', 'بتن', 'فلز', 'برف', 'آسفالت'];
 
 // ---------------------------------------------------------------------------------------------
 // CS2 competitive layouts (v3). Authored on a 2 m design grid (64 x 64 cells = 128 m) so the
@@ -363,7 +365,31 @@ function makeDoors(m, def) {
   });
 }
 
+// Deterministic value noise shared by the renderer and the visibility culler (wall skyline heights).
+export function vnoise(x, z, seed = 1) {
+  const h = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7 + seed * 74.7) * 43758.5453; return s - Math.floor(s); };
+  const ix = Math.floor(x), iz = Math.floor(z), fx = x - ix, fz = z - iz, sx = fx * fx * (3 - 2 * fx), sz = fz * fz * (3 - 2 * fz);
+  return (h(ix, iz) * (1 - sx) + h(ix + 1, iz) * sx) * (1 - sz) + (h(ix, iz + 1) * (1 - sx) + h(ix + 1, iz + 1) * sx) * sz;
+}
+// Visual height of every solid cell. def.skyline = {min, range, edge}; def.wallZones = [[x0,z0,x1,z1,h]] (cells/meters) overrides.
+export function wallHeights(m) {
+  if (m.wallH) return m.wallH;
+  const { W, H } = m, sk = m.def.skyline || {}, mn = sk.min ?? 5.6, rg = sk.range ?? 3.6, ed = sk.edge ?? 9;
+  const wh = new Float32Array(W * H);
+  for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+    if (m.heights[z * W + x] < WALL) continue;
+    const edge = x < 2 || z < 2 || x >= W - 2 || z >= H - 2;
+    wh[z * W + x] = edge ? ed : Math.round((mn + vnoise(x / 11, z / 11) * rg) * 2) / 2;
+  }
+  for (const [x0, z0, x1, z1, h] of m.def.wallZones || []) {
+    const hh = Math.max(3.5, Math.min(14, +h || 6));
+    for (let z = Math.max(0, Math.floor(z0)); z < Math.min(H, Math.ceil(z1)); z++) for (let x = Math.max(0, Math.floor(x0)); x < Math.min(W, Math.ceil(x1)); x++) if (wh[z * W + x] > 0) wh[z * W + x] = hh;
+  }
+  m.wallH = wh; return wh;
+}
+
 export function buildMap(def) {
+  normalizeDef(def);
   const S = def.scale || 1, [W, H] = def.size, N = W * H;
   const heights = new Float32Array(N).fill(WALL), floor = new Float32Array(N).fill(WALL);
   const ceil = new Float32Array(N).fill(1e9), mat = new Uint8Array(N), rampIdx = new Int16Array(N).fill(-1);
@@ -385,16 +411,19 @@ export function buildMap(def) {
   }
   for (const [x0, z0, x1, z1, c] of def.roofs || []) each(x0, z0, x1, z1, (i) => { if (heights[i] < WALL) ceil[i] = c; });
   const crates = [];
-  for (const [x, z, w, d, h, kind = 'crate'] of def.crates || []) {
+  for (const [x, z, w, d, h, kind = 'crate', color] of def.crates || []) {
+    if (x < 0 || z < 0 || x >= W || z >= H) continue;
     const base = floor[z * W + x];
     if (base >= WALL) continue;
-    crates.push({ x, z, w, d, base, h, kind });
+    crates.push({ x, z, w, d, base, h, kind, color });
     each(x, z, x + w, z + d, (i) => { heights[i] = base + h; mat[i] = MAT.CRATE; rampIdx[i] = -1; });
   }
   const m = { id: def.id, name: def.name, def, W, H, heights, floor, ceil, mat, ramps, rampIdx, crates, theme: def.theme };
   m.doors = makeDoors(m, def);
   m.spawnPoints = {};
   for (const t of ['T', 'CT']) m.spawnPoints[t] = def.spawns[t].map(([x, z]) => ({ x: x + 0.5, z: z + 0.5, y: floor[z * W + x], yaw: def.yaw[t] }));
+  // Bot routes / holds / buy zones / callouts are generated for maps that do not ship them (editor-made maps).
+  if (!def.routes || !def.holds || !def.buy || !Array.isArray(def.callouts)) { try { autoGameplay(m); } catch (e) { def.routes ||= {}; def.holds ||= {}; def.callouts ||= []; def.buy ||= { T: [0, 0, 8, 8], CT: [0, 0, 8, 8] }; } }
   return m;
 }
 export const inRect = (r, x, z) => x >= r[0] && x < r[2] && z >= r[1] && z < r[3];

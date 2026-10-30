@@ -6,6 +6,10 @@ const navCache = new Map();
 export function dropNav(id) { navCache.delete(id); }
 export function getNav(m) {
   if (navCache.has(m.id)) return navCache.get(m.id);
+  const nav = buildNav(m); navCache.set(m.id, nav); return nav;
+}
+// Uncached nav grid (used by the map editor / auto gameplay generator).
+export function buildNav(m) {
   const { W, H } = m, N = W * H, walk = new Uint8Array(N), h = new Float32Array(N);
   for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
     const i = z * W + x; h[i] = heightAt(m, x + 0.5, z + 0.5);
@@ -21,8 +25,7 @@ export function getNav(m) {
       const j = zz * W + xx; if (!walk[j] || Math.abs(h[j] - h[i]) > PHYS.step) near[i] = 1;
     }
   }
-  const nav = { m, W, H, walk, h, near, fields: new Map() };
-  navCache.set(m.id, nav); return nav;
+  return { m, W, H, walk, h, near, fields: new Map() };
 }
 const DIRS = [[1, 0, 10], [-1, 0, 10], [0, 1, 10], [0, -1, 10], [1, 1, 14], [1, -1, 14], [-1, 1, 14], [-1, -1, 14]];
 export function passable(nav, i, j, dx, dz) {
@@ -31,7 +34,7 @@ export function passable(nav, i, j, dx, dz) {
   return true;
 }
 // Dijkstra from a set of target cells. Returns Int32Array distances (-1 unreachable).
-export function field(nav, key, cells) {
+export function field(nav, key, cells, extra) {
   if (key && nav.fields.has(key)) return nav.fields.get(key);
   const { W, H } = nav, N = W * H, dist = new Int32Array(N).fill(-1);
   let heap = [];
@@ -44,7 +47,7 @@ export function field(nav, key, cells) {
     for (const [dx, dz, c] of DIRS) {
       const xx = x + dx, zz = z + dz; if (xx < 0 || zz < 0 || xx >= W || zz >= H) continue;
       const j = zz * W + xx; if (!passable(nav, i, j, dx, dz)) continue;
-      const nd = d + c + (nav.near[j] ? 6 : 0);
+      const nd = d + c + (nav.near[j] ? 6 : 0) + (extra ? extra[j] : 0);
       if (dist[j] < 0 || nd < dist[j]) { dist[j] = nd; push(j, nd); }
     }
   }

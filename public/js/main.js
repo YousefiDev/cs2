@@ -43,11 +43,13 @@ vmScene.add(new THREE.HemisphereLight('#e9f1ff', '#8a6a44', 1.7)); const vmSun =
 const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = vmCamera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); vmCamera.updateProjectionMatrix(); };
 addEventListener('resize', resize); resize();
 let world = null, worldId = null;
+const applyExposure = () => { renderer.toneMappingExposure = (world && world.exposure ? world.exposure : 1.1) * (Q === 'low' ? 0.92 : 1); };
+globalThis.__cs2 = { get world() { return world; } }; // debug: __cs2.world.stats() shows how many map chunks are loaded / drawn
 function loadMap(id, force = false) {
   if (worldId === id && !force) return getMap(id);
-  if (world) { scene.remove(world.root); world.root.traverse((o) => { o.geometry?.dispose?.(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { m.map?.dispose?.(); m.normalMap?.dispose?.(); m.roughnessMap?.dispose?.(); m.aoMap?.dispose?.(); m.dispose?.(); }); }); }
+  if (world) world.dispose();
   const bt = document.getElementById('brand-map'); if (bt) bt.textContent = String((MAP_DEFS[id] && MAP_DEFS[id].name) || 'Dust II').toUpperCase();
-  const m = getMap(id); world = buildWorld(scene, m, { low: Q === 'low', quality: Q }); worldId = m.id; game && (game.map = m); return m;
+  const m = getMap(id); world = buildWorld(scene, m, { low: Q === 'low', quality: Q }); applyExposure(); worldId = m.id; game && (game.map = m); return m;
 }
 let game = null;
 const map = loadMap(['dust2', 'mirage', 'inferno', 'warehouse', 'bazaar', 'arena'].includes(settings.map) ? settings.map : 'dust2');
@@ -180,7 +182,7 @@ function applyQuality() {
   const ratio = Math.min(devicePixelRatio, Q === 'high' ? (touch ? 1.5 : 2) : Q === 'medium' ? 1.25 : 1);
   renderer.setPixelRatio(ratio);
   renderer.setSize(innerWidth, innerHeight, false);
-  renderer.toneMappingExposure = Q === 'low' ? 1.0 : 1.1;
+  applyExposure();
   // Shadow-map type is fixed when WebGL shadow resources are first created;
   // changing it on a live renderer can invalidate GPU state. Keep the renderer
   // stable and only toggle the enabled flag here.
@@ -468,7 +470,7 @@ function frame(now) {
   if (game._settingsFrameReset) { game._settingsFrameReset = false; last = now; }
   const dt = Math.max(0, Math.min(0.05, (now - last) / 1000)); last = now;
   if (game.inRoom) game.update(dt); else lobbyCam(dt);
-  if (world && world.update) world.update(dt, camera.position);
+  if (world && world.update) world.update(dt, camera.position, camera);
   renderer.clear(); renderer.render(scene, camera);
   if (game.inRoom && game.alive && game.vm && game.vm.group.visible) { renderer.clearDepth(); renderer.render(vmScene, vmCamera); }
 }

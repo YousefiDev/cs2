@@ -9,6 +9,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import { ServerCore } from './shared/core.js';
 import { TICK_RATE } from './shared/constants.js';
+import { MAP_DEFS, registerCustomMaps } from './shared/maps.js';
+import { dropNav } from './shared/nav.js';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -20,6 +22,33 @@ const app = express();
 app.disable('x-powered-by');
 app.use('/shared', express.static(path.join(root, 'shared'), { maxAge: 0 }));
 app.use(express.static(path.join(root, 'public'), { maxAge: 0 }));
+// ---- Map editor API (same contract as the Cloudflare worker): /api/maps/* ----
+const BASE_DEFS = { ...MAP_DEFS };
+const CUSTOM_MAPS_FILE = path.join(root, 'maps-custom.json');
+let customMaps = {};
+try { if (fs.existsSync(CUSTOM_MAPS_FILE)) customMaps = JSON.parse(fs.readFileSync(CUSTOM_MAPS_FILE, 'utf8')) || {}; } catch (e) { console.error('[maps] could not read maps-custom.json:', e.message); }
+const applyCustomMaps = () => { for (const id of registerCustomMaps(customMaps)) dropNav(id); };
+applyCustomMaps();
+const mapsApi = express.Router();
+mapsApi.use(express.json({ limit: '12mb' }));
+mapsApi.get('/health', (_req, res) => res.json({ ok: true, service: 'cs2', route: 'local-node', authConfigured: !!ADMIN_KEY }));
+mapsApi.post('/auth', (req, res) => { const ok = typeof req.body?.key === 'string' && req.body.key === ADMIN_KEY; res.status(ok ? 200 : 401).json({ ok, error: ok ? null : 'unauthorized' }); });
+mapsApi.get('/definitions', (_req, res) => res.json(BASE_DEFS));
+mapsApi.get('/list', (_req, res) => res.json(Object.values(MAP_DEFS).map((d) => ({ id: d.id, name: d.name }))));
+mapsApi.get('/custom', (_req, res) => res.json(customMaps));
+mapsApi.post('/save', (req, res) => {
+  const body = req.body || {};
+  if (body.key !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  if (!body.maps || typeof body.maps !== 'object' || Array.isArray(body.maps)) return res.status(400).json({ ok: false, error: 'invalid_maps' });
+  const clean = {};
+  for (const [id, def] of Object.entries(body.maps)) {
+    if (!/^[a-z0-9_-]{2,32}$/.test(id) || !def || typeof def !== 'object' || def.id !== id || !Array.isArray(def.size) || !Array.isArray(def.areas) || !Array.isArray(def.crates)) return res.status(400).json({ ok: false, error: 'invalid_map_' + id });
+    clean[id] = def;
+  }
+  try { fs.writeFileSync(CUSTOM_MAPS_FILE, JSON.stringify(clean)); } catch (e) { return res.status(500).json({ ok: false, error: 'write_failed' }); }
+  customMaps = clean; applyCustomMaps(); res.json({ ok: true, count: Object.keys(clean).length });
+});
+app.use('/api/maps', mapsApi);
 app.get('/health', (_req, res) => res.json({ ok: true, uptime: Math.round(process.uptime()), ...core.stats(), servers: core.list() }));
 app.get('/admin', (_req, res) => res.sendFile(path.join(root, 'public', 'admin.html')));
 
