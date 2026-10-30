@@ -5,3 +5,4 @@
 3. Rebuild from the mesh:
    node tools/gltf2game.cjs world.gltf --bin de_dust2.bin -o dust2_cs.json --gameplay dust2_real.json
    (tools use .cjs because the project is "type": "module").
+ok.
