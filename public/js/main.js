@@ -1,4 +1,5 @@
 // Boot: renderer, Dust II world, lobby flyover, settings, connection and the frame loop.
+import { initPauseMenu } from './pausemenu.js';
 import * as THREE from 'three';
 import { getMap, registerCustomMaps, MAP_DEFS } from '/shared/maps.js';
 import { buildWorld } from './world.js';
@@ -44,7 +45,7 @@ const resize = () => { renderer.setSize(innerWidth, innerHeight, false); camera.
 addEventListener('resize', resize); resize();
 let world = null, worldId = null;
 const applyExposure = () => { renderer.toneMappingExposure = (world && world.exposure ? world.exposure : 1.1) * (Q === 'low' ? 0.92 : 1); };
-globalThis.__cs2 = { get world() { return world; } }; // debug: __cs2.world.stats() shows how many map chunks are loaded / drawn
+globalThis.__cs2 = { get world() { return world; }, get game() { return game; } }; // debug: __cs2.world.stats() shows how many map chunks are loaded / drawn
 function loadMap(id, force = false) {
   if (worldId === id && !force) return getMap(id);
   if (world) world.dispose();
@@ -173,6 +174,7 @@ $('p-resume').addEventListener('click', () => { game.setMenuPaused(false); if (!
 $('p-team').addEventListener('click', () => { game.setMenuPaused(false); game.openTeamSelect(); });
 $('p-settings').addEventListener('click', () => { $('pause').hidden = true; openSettings(); });
 $('p-leave').addEventListener('click', () => { game.setMenuPaused(false); game.leave(); });
+initPauseMenu(game);
 // settings
 function applyQuality() {
   const next = ['high', 'medium', 'low'].includes(settings.quality) ? settings.quality : 'high';

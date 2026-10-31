@@ -202,17 +202,32 @@
       <div id="mv-grid"></div>
     </div>
   </div>
-  <div id="pause" hidden dir="rtl">
-    <div class="pause-card">
-      <h2>توقف</h2>
-      <div class="pause-status">بازی متوقف شد</div><button id="p-resume" class="cta">ادامهٔ بازی</button>
-      <button id="p-team" class="ghost">تغییر تیم</button>
-      <button id="p-settings" class="ghost">تنظیمات و کنترل‌ها</button>
-      <button id="p-report" class="ghost">⚑ گزارش بازیکن</button>
-      <button id="p-uiedit" class="ghost touch-only">✥ UI Editor · جابه‌جایی دکمه‌ها</button>
-      <button id="p-leave" class="ghost danger">خروج از سرور</button>
+  <div id="pause" hidden dir="rtl" role="dialog" aria-modal="true" aria-label="منوی بازی">
+    <header class="pz-top">
+      <div class="pz-logo" dir="ltr"><span>COUNTER-STRIKE</span><b>DUST II</b></div>
+      <div class="pz-state" dir="ltr"><i></i>GAME PAUSED<small>بازی متوقف شد</small></div>
+    </header>
+    <nav class="pz-menu" aria-label="منو">
+      <button id="p-resume" class="pz-item pz-primary"><span class="pz-ico"><svg viewBox="0 0 24 24"><path d="M8 5.5v13l11-6.5z"/></svg></span><span class="pz-txt"><small>RESUME GAME</small>ادامهٔ بازی</span><kbd>Esc</kbd></button>
+      <button id="p-team" class="pz-item"><span class="pz-ico"><svg viewBox="0 0 24 24"><path d="M7 7h11l-3-3M17 17H6l3 3"/></svg></span><span class="pz-txt"><small>SWITCH TEAM</small>تغییر تیم</span></button>
+      <button id="p-settings" class="pz-item"><span class="pz-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3.5v2.3M12 18.2v2.3M3.5 12h2.3M18.2 12h2.3M6 6l1.6 1.6M16.4 16.4 18 18M18 6l-1.6 1.6M7.6 16.4 6 18"/></svg></span><span class="pz-txt"><small>SETTINGS &amp; CONTROLS</small>تنظیمات و کنترل‌ها</span></button>
+      <button id="p-report" class="pz-item"><span class="pz-ico"><svg viewBox="0 0 24 24"><path d="M6 20V4M6 5h11l-2 3.5 2 3.5H6"/></svg></span><span class="pz-txt"><small>REPORT PLAYER</small>گزارش بازیکن</span></button>
+      <button id="p-uiedit" class="pz-item touch-only"><span class="pz-ico"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></svg></span><span class="pz-txt"><small>UI EDITOR</small>جابه‌جایی دکمه‌ها</span></button>
+      <button id="p-leave" class="pz-item pz-danger"><span class="pz-ico"><svg viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/></svg></span><span class="pz-txt"><small>LEAVE MATCH</small><em>خروج از سرور</em></span></button>
+      <div class="pz-hint" dir="ltr"><kbd>↑</kbd><kbd>↓</kbd> Navigate <kbd>Enter</kbd> Select <kbd>Esc</kbd> Resume</div>
+    </nav>
+    <aside class="pz-info" aria-label="اطلاعات بازی">
+      <div class="pz-mode" id="pz-mode" dir="ltr">COMPETITIVE</div>
+      <h2 class="pz-map" id="pz-map" dir="ltr">—</h2>
+      <div class="pz-score" id="pz-score" dir="ltr"><span class="t"><small>T</small><b id="pz-st">0</b></span><i>:</i><span class="ct"><b id="pz-sct">0</b><small>CT</small></span></div>
+      <div class="pz-round" id="pz-round"></div>
+      <dl class="pz-rows">
+        <div><dt>سرور</dt><dd id="pz-title">—</dd></div>
+        <div><dt>بازیکنان</dt><dd id="pz-players" dir="ltr">—</dd></div>
+        <div><dt>تیم تو</dt><dd id="pz-team">—</dd></div>
+      </dl>
       <p class="pause-code" id="p-code" dir="ltr"></p>
-    </div>
+    </aside>
   </div>
   <div id="clickplay" hidden>کلیک کن تا وارد بازی بشی</div>
   <div id="mobile-hint" hidden>بازی در حالت افقی اجرا می‌شود</div>
