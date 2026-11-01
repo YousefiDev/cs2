@@ -14,14 +14,17 @@ import { StatsUI } from './stats.js';
 import { ReportUI } from './report.js';
 import { Keybinds, ACTIONS, GROUPS, codeLabel, RESERVED } from './keybinds.js';
 import { VoiceChat } from './voice.js';
-import { startGunPreload, gunsEssentialReady } from './glbguns.js';
+import { startGunPreload, gunsEssentialReady } from './glbguns.js';
+import { TUNE, TUNE_DEFAULTS, tuneOf, bumpTune } from './models.js';
+import { WEAPONS, WEAPON_KEYS } from '/shared/weapons.js';
 
 const $ = (id) => document.getElementById(id);
 const FA = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 const DEF = { map: 'dust2', name: '', sens: 1.2, touchSens: 1, gyro: false, fov: 74, vol: 0.7, ch: 6, chcolor: '#3cff6f', quality: 'high', radio: 'on', bots: 'fill', difficulty: 'normal', max: '10', touchLayout: {} };
 const settings = Object.assign({}, DEF, JSON.parse(localStorage.getItem('cs-dust2') || '{}'));
 const save = () => localStorage.setItem('cs-dust2', JSON.stringify(settings));
-for (const [k, v] of Object.entries({ voiceOn: true, voiceMode: 'ptt', voiceSens: -42, voiceMic: 1, voiceVol: 1, voiceDev: '', voiceMuted: {}, voiceVols: {}, keys: {} })) if (settings[k] === undefined) settings[k] = v;
+for (const [k, v] of Object.entries({ voiceOn: true, voiceMode: 'ptt', voiceSens: -42, voiceMic: 1, voiceVol: 1, voiceDev: '', voiceMuted: {}, voiceVols: {}, keys: {}, vmTune: { all: {}, guns: {} } })) if (settings[k] === undefined) settings[k] = v;
+TUNE.all = settings.vmTune.all || (settings.vmTune.all = {}); TUNE.guns = settings.vmTune.guns || (settings.vmTune.guns = {});   // view-model tuning lives in the saved settings
 const binds = new Keybinds(settings, save);   // rebindable keys (settings > کلیدها)
 const isMobile = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 if ('serviceWorker' in navigator) {
@@ -220,7 +223,7 @@ function openSettings() {
 $('btn-settings').addEventListener('click', openSettings);
 $('s-layout').addEventListener('click', () => { $('settings').hidden = true; openEditor(); });
 const closeSettings = (saveChanges = true) => {
-  $('settings').hidden = true; stopVoiceTest(); cancelCapture(); clearInterval(vcPlayersT);
+  $('settings').hidden = true; stopVoiceTest(); cancelCapture(); clearInterval(vcPlayersT); closeViewPane();
   if (saveChanges) save();
   applySettings();
   // Settings can be opened from the pause screen. That screen leaves
@@ -241,7 +244,7 @@ document.querySelectorAll('#set-tabs button').forEach((b) => b.addEventListener(
 function setSetTab(p) {
   document.querySelectorAll('#set-tabs button').forEach((x) => x.classList.toggle('on', x.dataset.p === p));
   document.querySelectorAll('.set-pane').forEach((x) => { x.hidden = x.dataset.pane !== p; });
-  cancelCapture(); if (p === 'keys') renderKeys(); if (p === 'voice') openVoicePane(); else { stopVoiceTest(); clearInterval(vcPlayersT); }
+  cancelCapture(); if (p === 'view') openViewPane(); else closeViewPane(); if (p === 'keys') renderKeys(); if (p === 'voice') openVoicePane(); else { stopVoiceTest(); clearInterval(vcPlayersT); }
 }
 // --- key bindings: click a key box, press the new key (or a mouse button) ---
 let capturing = null;
@@ -490,3 +493,53 @@ setInterval(() => {
 }, 250);
 ensureOnline().then(refreshRooms).catch(() => {});
 window.__game = game; window.__three = { renderer, scene, camera };
+
+// ---------- settings > ویو مدل: live tuning of the held gun, hands and muzzle (saved locally) ----------
+const VM_GUN = [['gx', 'گان ←→', -0.3, 0.3, 0.005], ['gy', 'گان ↑↓', -0.3, 0.3, 0.005], ['gz', 'گان جلو/عقب', -0.4, 0.4, 0.005], ['gr', 'چرخش گان °', -40, 40, 1], ['gs', 'اندازهٔ گان', 0.6, 1.6, 0.01],
+  ['lx', 'دست چپ ←→', -0.3, 0.3, 0.005], ['ly', 'دست چپ ↑↓', -0.3, 0.3, 0.005], ['lz', 'دست چپ جلو/عقب', -0.4, 0.4, 0.005],
+  ['mx', 'سر لوله ←→', -0.15, 0.15, 0.002], ['my', 'سر لوله ↑↓', -0.15, 0.15, 0.002], ['mz', 'سر لوله جلو/عقب', -0.3, 0.3, 0.005]];
+const VM_ALL = [['x', 'ویو مدل ←→', -0.25, 0.25, 0.005], ['y', 'ویو مدل ↑↓', -0.25, 0.25, 0.005], ['z', 'ویو مدل جلو/عقب', -0.3, 0.3, 0.005], ['rx', 'چرخش X °', -20, 20, 0.5], ['ry', 'چرخش Y °', -30, 30, 0.5], ['s', 'اندازهٔ کل', 0.7, 1.4, 0.01], ['fov', 'FOV ویو مدل', 45, 90, 1]];
+let vmKey = 'ak47';
+function vmCommit() { bumpTune(); save(); }
+function closeViewPane() { if (game) game.vmPreview = null; $('settings').classList.remove('vm-see'); }
+function openViewPane() {
+  const box = $('vm-pane'); if (!box) return;
+  const cur = game && game.activeItem && game.activeItem(); if (cur && WEAPONS[cur.k]) vmKey = cur.k;
+  const row = (id, label, mn, mx, st, val) => `<label class="range"><span>${label}</span><input type="range" data-id="${id}" min="${mn}" max="${mx}" step="${st}" value="${val}" /><b></b></label>`;
+  const g = tuneOf(vmKey), a = TUNE.all;
+  box.innerHTML = `<p class="set-note">گان را انتخاب کن و با اسلایدرها جای آن را در دست تنظیم کن. تغییرات همان لحظه روی ویو مدل دیده می‌شود و روی همین دستگاه ذخیره می‌شود.</p>
+    <select id="vm-gun">${WEAPON_KEYS.map((k) => `<option value="${k}"${k === vmKey ? ' selected' : ''}>${esc(WEAPONS[k].name)}</option>`).join('')}</select>
+    <label class="check"><input type="checkbox" id="vm-see" /><span>شفاف‌کردن پنل برای دیدن گان (با ماوس روی پنل دوباره پررنگ می‌شود)</span></label>
+    <h4>این گان</h4><div id="vm-rows-g">${VM_GUN.map(([id, l, mn, mx, st]) => row('g:' + id, l, mn, mx, st, g[id])).join('')}</div>
+    <div class="vm-btns"><button id="vm-reset-g" class="ghost">ریست این گان</button><button id="vm-copy-g" class="ghost">کپی تنظیم این گان برای همهٔ گان‌ها</button></div>
+    <h4>همهٔ گان‌ها</h4><div id="vm-rows-a">${VM_ALL.map(([id, l, mn, mx, st]) => row('a:' + id, l, mn, mx, st, a[id] ?? (id === 's' ? 1 : id === 'fov' ? 62 : 0))).join('')}</div>
+    <div class="vm-btns"><button id="vm-reset-a" class="ghost">ریست تنظیم کلی</button><button id="vm-reset-all" class="ghost">ریست همه</button></div>
+    <h4>خروجی / ورودی (JSON)</h4><textarea id="vm-json" spellcheck="false" placeholder="JSON تنظیمات"></textarea>
+    <div class="vm-btns"><button id="vm-export" class="ghost">گرفتن خروجی</button><button id="vm-import" class="ghost">اعمال ورودی</button></div>`;
+  if (game) game.vmPreview = vmKey;
+  const fmt = (el) => { el.nextElementSibling.textContent = (+el.value).toFixed(el.step.length > 3 ? 3 : el.step.includes('.') ? 2 : 0); };
+  box.querySelectorAll('input[type=range]').forEach((el) => {
+    fmt(el);
+    el.oninput = () => {
+      const [sc, id] = el.dataset.id.split(':'), v = +el.value;
+      if (sc === 'g') (TUNE.guns[vmKey] ||= {})[id] = v; else TUNE.all[id] = v;
+      fmt(el); vmCommit();
+    };
+  });
+  $('vm-gun').onchange = (e) => { vmKey = e.target.value; openViewPane(); };
+  $('vm-see').onchange = (e) => $('settings').classList.toggle('vm-see', e.target.checked);
+  $('vm-reset-g').onclick = () => { delete TUNE.guns[vmKey]; vmCommit(); openViewPane(); };
+  $('vm-copy-g').onclick = () => { const t = { ...(TUNE.guns[vmKey] || {}) }; for (const k of WEAPON_KEYS) TUNE.guns[k] = { ...t }; vmCommit(); openViewPane(); };
+  $('vm-reset-a').onclick = () => { for (const k of Object.keys(TUNE.all)) delete TUNE.all[k]; vmCommit(); openViewPane(); };
+  $('vm-reset-all').onclick = () => { for (const k of Object.keys(TUNE.all)) delete TUNE.all[k]; for (const k of Object.keys(TUNE.guns)) delete TUNE.guns[k]; vmCommit(); openViewPane(); };
+  $('vm-export').onclick = () => { $('vm-json').value = JSON.stringify({ all: TUNE.all, guns: TUNE.guns }); $('vm-json').select(); try { navigator.clipboard && navigator.clipboard.writeText($('vm-json').value); } catch (e) {} };
+  $('vm-import').onclick = () => {
+    try {
+      const j = JSON.parse($('vm-json').value); if (!j || typeof j !== 'object') throw 0;
+      for (const k of Object.keys(TUNE.all)) delete TUNE.all[k]; for (const k of Object.keys(TUNE.guns)) delete TUNE.guns[k];
+      const num = (o) => Object.fromEntries(Object.entries(o || {}).filter(([k, v]) => Number.isFinite(+v)).map(([k, v]) => [k, +v]));
+      Object.assign(TUNE.all, num(j.all)); for (const [k, v] of Object.entries(j.guns || {})) if (WEAPONS[k]) TUNE.guns[k] = num(v);
+      vmCommit(); openViewPane();
+    } catch (e) { $('vm-json').value = 'JSON نامعتبر'; }
+  };
+}

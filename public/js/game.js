@@ -4,7 +4,7 @@ import { PHYS, ROUND, clamp, forward, angDiff } from '/shared/constants.js';
 import { calloutAt, inRect } from '/shared/maps.js';
 import { stepMove, rayWorld, rayPlayer, hasLOS, traceBullet, updateDoors } from '/shared/physics.js';
 import { WEAPONS, WEAPON_KEYS, NADES, inaccuracy, spreadDir } from '/shared/weapons.js';
-import { makeSoldier, setRigWeapon, animateRig, makeGun, makeViewArms } from './models.js';
+import { makeSoldier, setRigWeapon, animateRig, makeGun, makeViewArms, TUNE, applyGunTune } from './models.js';
 import { hasGunGLB } from './glbguns.js';
 import * as TX from './textures.js';
 import { radio } from './audio.js';
@@ -437,7 +437,7 @@ export class Game {
     const tr0 = trc(dir, range), wall = tr0.end; let best = pick(dir, tr0);
     const T = best ? best.t : wall.t, end = new THREE.Vector3(eye[0] + dir[0] * T, eye[1] + dir[1] * T, eye[2] + dir[2] * T);
     if (w.pellets > 1) {
-      const mz0 = this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
+      const mz0 = this.vmMuzzle() || this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
       for (let i = 0; i < w.pellets; i++) {
         const pd = spreadDir(dir, w.spread, Math.random), ptr = trc(pd, 80), pw = ptr.end; let pb = pick(pd, ptr);
         const pT = pb ? pb.t : pw.t, pe = new THREE.Vector3(eye[0] + pd[0] * pT, eye[1] + pd[1] * pT, eye[2] + pd[2] * pT);
@@ -448,7 +448,7 @@ export class Game {
       this.punchP += w.kick * 1.4; this.punchY += (Math.random() - 0.5) * w.side * 2; return;
     }
     if (w.melee) { this.vmKick = alt ? 1.35 : 1; this.vmKnifeAlt = !!alt; if (!best && wall.t < range && wall.n) { this.impact(end, new THREE.Vector3(...wall.n), true, true, alt ? 'stab' : 'slash'); this.sound.knifeHit(end, false); } if (best) { this.blood(end, true); this.sound.knifeHit(end, true); } return; }
-    const mz = this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
+    const mz = this.vmMuzzle() || this.camera.localToWorld(new THREE.Vector3(0.22, -0.18, -0.9));
     if (this.shotsFired % 2 === 1 || !w.auto) this.tracer(mz, end);
     this.flashAt(this.camera.position, false); this.vmFlash = now + 45; this.vmKick = 1;
     for (const en of tr0.entries) if (en.t < T) this.impact(new THREE.Vector3(...en.p), new THREE.Vector3(...en.n), true);   // holes where the bullet went through a wall
@@ -520,12 +520,13 @@ export class Game {
   // ---------------- view model ----------------
   updateViewModel(dt, now) {
     if (!this.vm) { this.vm = { group: new THREE.Group() }; this.vmScene.add(this.vm.group); }
-    const it = this.activeItem(); const g = this.vm.group;
-    g.visible = this.alive && !this.scope && !!it && (this.team === 'T' || this.team === 'CT');
+    const it = this.vmPreview ? { k: this.vmPreview } : this.activeItem(); const g = this.vm.group;   // vmPreview: settings > ویو مدل shows any gun in hand
+    g.visible = (this.alive || !!this.vmPreview) && !this.scope && !!it && (this.team === 'T' || this.team === 'CT');
     if (!g.visible) return;
-    if (this.vmKey !== it.k || this.vmTeam !== this.team || this.vmGlb !== hasGunGLB(it.k, this.team)) {
+    if (this.vmKey !== it.k || this.vmTeam !== this.team || this.vmGlb !== hasGunGLB(it.k, this.team) || this.vmTune !== TUNE.v) {
+      this.vmTune = TUNE.v;
       if (this.vmGun) g.remove(this.vmGun); if (this.vmArms) g.remove(this.vmArms);
-      this.vmGlb = hasGunGLB(it.k, this.team); this.vmGun = makeGun(it.k, this.team); if (NADES.includes(it.k)) this.vmGun.scale.setScalar(1.35); this.vmGun.traverse((o) => { if (o.isMesh) o.castShadow = false; }); g.add(this.vmGun);
+      this.vmGlb = hasGunGLB(it.k, this.team); this.vmGun = makeGun(it.k, this.team); applyGunTune(this.vmGun, it.k, NADES.includes(it.k) ? 1.35 : 1); this.vmGun.traverse((o) => { if (o.isMesh) o.castShadow = false; }); g.add(this.vmGun);
       this.vmArms = makeViewArms(this.team, it.k); g.add(this.vmArms); this.vmKey = it.k; this.vmTeam = this.team;
       const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texStar, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); flash.scale.setScalar(0.32); flash.position.copy(this.vmGun.userData.muzzle); flash.visible = false; this.vmGun.add(flash); this.vmFlashSprite = flash;
     }
@@ -539,9 +540,10 @@ export class Game {
     if (now < this.drawEnd) { const t = (this.drawEnd - now) / ((w.draw || 0.4) * 1000); y -= t * 0.25; rx -= t * 0.6; }
     if (this.reloadUntil) { const t = 1 - (this.reloadUntil - now) / (w.reload * 1000); const k = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI); y -= k * 0.12; rx -= k * 0.5; rz += k * 0.4; }
     if (this.s.crouch) y += 0.01;
-    g.position.set(x, y, z); g.rotation.set(rx + 0.06, ry + (w.melee ? 0.35 : 0.16), rz - 0.04);
+    const ta = TUNE.all; g.scale.setScalar(ta.s || 1);
+    g.position.set(x + (ta.x || 0), y + (ta.y || 0), z + (ta.z || 0)); g.rotation.set(rx + 0.06 + (ta.rx || 0) * 0.01745, ry + (w.melee ? 0.35 : 0.16) + (ta.ry || 0) * 0.01745, rz - 0.04);
     if (this.vmFlashSprite) { this.vmFlashSprite.visible = now < this.vmFlash; this.vmFlashSprite.material.rotation = Math.random() * 6; }
-    this.vmCamera.fov = 62; this.vmCamera.aspect = this.camera.aspect; this.vmCamera.updateProjectionMatrix();
+    this.vmCamera.fov = TUNE.all.fov || 62; this.vmCamera.aspect = this.camera.aspect; this.vmCamera.updateProjectionMatrix();
   }
   // ---------------- effects ----------------
   initFx() {
@@ -552,6 +554,14 @@ export class Game {
   }
   addFx(obj, life, update) { this.scene.add(obj); this.effects.push({ obj, life, max: life, update }); }
   flashAt(pos, remote) { this.flashLight.position.copy(pos); this.flashLight.intensity = remote ? 18 : 10; this.flashT = 0.05; if (remote) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texStar, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); s.position.copy(pos); s.scale.setScalar(0.5); s.material.rotation = Math.random() * 6; this.addFx(s, 0.05); } }
+  // world position of the held gun's real muzzle (tracers start there instead of a fixed spot under the barrel)
+  vmMuzzle() {
+    if (!this.vmGun || !this.vm || !this.vm.group.visible || !this.vmGun.userData.muzzle) return null;
+    this.vm.group.updateMatrixWorld(true); this.vmCamera.updateMatrixWorld(true);
+    const p = this.vmGun.localToWorld(this.vmGun.userData.muzzle.clone()).project(this.vmCamera);   // viewmodel has its own FOV: go through screen space
+    const d = new THREE.Vector3(p.x, p.y, 0.5).unproject(this.camera).sub(this.camera.position).normalize();
+    return this.camera.position.clone().addScaledVector(d, 0.9);
+  }
   tracer(a, b) { const g = new THREE.BufferGeometry().setFromPoints([a, b]); const l = new THREE.Line(g, this.tracerMat.clone()); this.addFx(l, 0.07, (fx, k) => { l.material.opacity = 0.55 * k; }); }
   puff(pos, tex, size, life, rise = 0.4) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true })); s.position.copy(pos); s.scale.setScalar(size * 0.4); this.addFx(s, life, (fx, k) => { s.material.opacity = k; s.scale.setScalar(size * (1.4 - k)); s.position.y += rise * 0.016; }); }
   // kind: undefined = bullet hole, 'slash' / 'stab' = scratch left by the knife

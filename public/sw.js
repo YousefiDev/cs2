@@ -1,4 +1,4 @@
-const CACHE = 'cs-dust-online-v24-glbguns';
+const CACHE = 'cs-dust-online-v25-glbguns-vmtune';
 const CORE = [
   '/', '/manifest.webmanifest', '/css/style.css', '/css/mobile.css',
   '/js/main.js', '/js/game.js', '/js/hud.js', '/js/models.js', '/js/glbguns.js',

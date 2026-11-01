@@ -77,6 +77,33 @@ const CFG = {
   c4:       F('c4/weapon_c4.glb', 'c4', '#b9a577', 0.8, 0.05, { zones: 'c4', screenPrim: 0 }),
   // mag7: no GLB in the pack -> keeps the procedural model
 };
+// per-weapon colours of the individual parts (body = cfg.color; slide/mag/accent/dark override the defaults)
+// partFn(x,y,z)/pieceFn(centerY,centerZ,piece) pick a colour by position in the export's own axes (+Z = muzzle)
+const WOOD = '#8a5a2b', STEEL = '#1d1f21';
+const PAL = {
+  ak47:   { color: '#2f3033', mag: '#3b3a38', dark: '#17181a', partFn: (x, y, z) => (z < 0.045 || (z > 0.26 && z < 0.47 && Math.hypot(x, y - 0.066) > 0.017) ? WOOD : z > 0.47 ? STEEL : null), pieceFn: (cy, cz) => (cz < 0.06 && cy < 0.02 ? WOOD : cz > 0.26 && cz < 0.47 && cy < 0.1 ? WOOD : null) },
+  m4a4:   { color: '#2a2c2f', mag: '#1e1f21', accent: '#3a3d41' },
+  m4a1s:  { color: '#2f3236', mag: '#1e1f21', accent: '#3f4348' },
+  awp:    { partFn: (x, y, z) => (z > 0.58 ? STEEL : null) },
+  ssg08:  { color: '#4a5238', partFn: (x, y, z) => (z > 0.5 ? STEEL : null) },
+  scar20: { color: '#3b3d40', mag: '#2a2c2e', accent: '#6f6650' },
+  g3sg1:  { color: '#34373a', mag: '#26282a' },
+  glock:  { color: '#2a2c2e', slide: '#3c3f43' },
+  usp:    { color: '#26282b', slide: '#4a4e55', slideH: 0.04 },
+  p2000:  { color: '#33373d', slide: '#4f545b' },
+  deagle: { color: '#a9adb2', slide: '#b4b8bd', slideH: 0.055, dark: '#2a2c2f' },
+  elite:  { color: '#3c3f44', slide: '#6d7177' },
+  p250:   { color: '#3d4147', slide: '#5d6269' },
+  tec9:   { color: '#2a2c30', slide: '#3c3f44', slideH: 0.04 },
+  fiveseven: { color: '#5b5340', slide: '#2d2f31' },
+  cz75:   { color: '#3a3d41', slide: '#6a6e74' },
+  r8:     { color: '#6b7078', partFn: (x, y, z) => (y < 0.0 && z > -0.03 && z < 0.04 ? '#5a3a22' : null) },
+  zeus:   { dark: '#1c1c1c' },
+  m249:   { color: '#33362f', mag: '#3d4a36' },
+  negev:  { color: '#3f443f', mag: '#2e332e' },
+  nova:   { color: '#2f3134', partFn: (x, y, z) => (z < 0.0 || (z > 0.28 && z < 0.5 && y < 0.08) ? '#3a2a1e' : null) },
+};
+for (const k in PAL) Object.assign(CFG[k], PAL[k]);
 export const GLB_KEYS = Object.keys(CFG);
 // loaded first (before a match starts); the rest streams in afterwards
 export const ESSENTIAL = ['knife_ct', 'knife_t', 'glock', 'usp', 'p2000', 'c4', 'he', 'flash', 'smoke', 'deagle', 'ak47', 'm4a4', 'm4a1s', 'awp'];
@@ -181,6 +208,54 @@ function zoneColors(geo, zones) {
   geo.setAttribute('color', new THREE.BufferAttribute(c, 3));
 }
 
+// ---- part-by-part colouring: the exports have no textures, so parts are told apart by geometry --------------
+// 1) weld vertices -> connected pieces (scope, magazine, sights, pins ... are separate pieces)
+// 2) colour pieces by role (body / magazine / optic / small parts), 3) split the big body piece by position
+function pieces(geo) {
+  const pos = geo.attributes.position, n = pos.count, idx = geo.index.array, id = new Int32Array(n), map = new Map();
+  for (let i = 0; i < n; i++) { const k = Math.round(pos.getX(i) * 1e4) + ',' + Math.round(pos.getY(i) * 1e4) + ',' + Math.round(pos.getZ(i) * 1e4); let w = map.get(k); if (w === undefined) { w = map.size; map.set(k, w); } id[i] = w; }
+  const par = new Int32Array(map.size).map((_, i) => i), find = (x) => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+  for (let i = 0; i < idx.length; i += 3) { const a = find(id[idx[i]]), b = find(id[idx[i + 1]]), c = find(id[idx[i + 2]]); par[b] = a; par[c] = a; }
+  const label = new Int32Array(n), stats = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(id[i]); label[i] = r; let st = stats.get(r);
+    if (!st) { st = { n: 0, min: [1e9, 1e9, 1e9], max: [-1e9, -1e9, -1e9] }; stats.set(r, st); }
+    st.n++; const v = [pos.getX(i), pos.getY(i), pos.getZ(i)];
+    for (let c = 0; c < 3; c++) { if (v[c] < st.min[c]) st.min[c] = v[c]; if (v[c] > st.max[c]) st.max[c] = v[c]; }
+  }
+  return { label, stats };
+}
+const _hex = new Map(); const hexc = (h) => { let c = _hex.get(h); if (!c) { c = new THREE.Color(h); _hex.set(h, c); } return c; };
+const shade = (hex, f) => new THREE.Color(hex).multiplyScalar(f);
+
+function paintGeo(geo, prim, cfg) {
+  const pos = geo.attributes.position, n = pos.count, col = new Float32Array(n * 3), K = KIND[cfg.kind];
+  const base = new THREE.Color(cfg.color), dark = new THREE.Color(cfg.dark || '#15171a'), optic = new THREE.Color('#0d0e10');
+  const mag = cfg.mag ? new THREE.Color(cfg.mag) : shade(cfg.color, 0.78), accent = cfg.accent ? new THREE.Color(cfg.accent) : shade(cfg.color, 0.62);
+  const slide = cfg.slide ? new THREE.Color(cfg.slide) : null;
+  const put = (i, c) => { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; };
+  if (prim > 0 || !geo.index) { for (let i = 0; i < n; i++) put(i, dark); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); return; }
+  const { label, stats } = pieces(geo);
+  let main = null; for (const [r, st] of stats) if (!main || st.n > stats.get(main).n) main = r;
+  const M = stats.get(main), nade = cfg.kind === 'nade';
+  for (let i = 0; i < n; i++) {
+    const st = stats.get(label[i]), x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const cy = (st.min[1] + st.max[1]) / 2, cz = (st.min[2] + st.max[2]) / 2, zlen = st.max[2] - st.min[2];
+    let c;
+    if (label[i] === main) {
+      c = base;
+      if (K.pistol && slide) c = y > M.max[1] - (cfg.slideH || 0.034) ? slide : base;                     // slide vs frame
+      const pf = cfg.partFn && cfg.partFn(x, y, z); if (pf) c = hexc(pf);                                // wood / barrel / furniture by position
+    } else if (cfg.pieceFn && cfg.pieceFn(cy, cz, st)) c = hexc(cfg.pieceFn(cy, cz, st));
+    else if (st.n > 600 && st.min[1] >= M.max[1] - 0.02 && zlen > 0.08 && !K.pistol && !nade) c = optic;   // scope / sight tube sitting on top
+    else if (st.n > 600 && st.min[1] < M.min[1] - 0.025 && !K.pistol && !nade) c = mag;                    // hangs below the body = magazine / drum / box
+    else if (st.n < 1200) c = dark;                                                                       // sights, pins, trigger, levers
+    else c = accent;
+    put(i, c);
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+}
+
 // keep only the triangles whose centroid satisfies `pick(cx, cy, cz)`; the result keeps just the vertices it uses,
 // so bounds and measurements are per piece. partition() returns [matching, rest].
 function partition(geo, pick) {
@@ -208,6 +283,7 @@ async function buildTemplate(tk, cfg, glb) {
   let parts = [];
   for (const p of prims) {
     if (cfg.zones && p.prim !== cfg.screenPrim) zoneColors(p.geo, cfg.zones);
+    else if (!cfg.zones) paintGeo(p.geo, p.prim, cfg);
     if (cfg.cut && p.geo.index) p.geo = partition(p.geo, (x, y, z) => z <= cfg.cut.zMax)[0];   // drop stray pieces (pre-rotation coords)
     if (cfg.split && p.geo.index) { const [b, a] = partition(p.geo, (x) => x > cfg.split.x); parts.push({ ...p, geo: a, side: 0 }, { ...p, geo: b, side: 1 }); }
     else parts.push({ ...p, side: 0 });
@@ -226,13 +302,14 @@ async function buildTemplate(tk, cfg, glb) {
     p.geo.applyMatrix4(m); p.geo.computeBoundingBox(); p.geo.computeBoundingSphere();
   }
   // materials
-  const base = new THREE.MeshStandardMaterial({ color: cfg.zones ? '#ffffff' : cfg.color, roughness: cfg.rough, metalness: cfg.metal, vertexColors: !!cfg.zones });
+  // no environment map in the scene, so strongly metallic surfaces would render near-black: keep colours readable
+  const base = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: Math.max(cfg.rough, 0.5), metalness: Math.min(cfg.metal, 0.35), vertexColors: true });
   const dark = new THREE.MeshStandardMaterial({ color: '#121315', roughness: 0.5, metalness: 0.4 });
   const screen = new THREE.MeshBasicMaterial({ color: '#7dff4f', toneMapped: false });
   const out = [];
   for (const p of parts) {
     let mat = p.material !== undefined ? await embeddedMaterial(glb, p.material, cache) : null;
-    if (!mat) mat = cfg.screenPrim !== undefined && p.prim === cfg.screenPrim ? screen : (cfg.zones || p.prim === 0 ? base : dark);
+    if (!mat) mat = cfg.screenPrim !== undefined && p.prim === cfg.screenPrim ? screen : base;
     out.push({ geo: p.geo, mat, side: p.side });
   }
   // muzzle + off-hand support, measured on the final (game-space) geometry
@@ -244,7 +321,9 @@ async function buildTemplate(tk, cfg, glb) {
   else {
     const fx = [], fy = [];
     for (let i = 0; i < zs.length; i++) if (zs[i] < minZ + 0.015) { fx.push(xs[i]); fy.push(ys[i]); }
-    muzzle = new THREE.Vector3(median(fx), median(fy), minZ - 0.004);
+    let my = median(fy);
+    if (K.pistol && fy.length) { const hi = fy.filter((v) => v >= my); my = (my + median(hi)) / 2; }   // barrel sits in the upper half of the slide front
+    muzzle = new THREE.Vector3(median(fx), my, minZ - 0.004);
   }
   if (K.pistol) support = new THREE.Vector3(cfg.split ? cfg.split.leftX : -0.03, -0.035, 0.012);
   else if (K.sup) {

@@ -898,3 +898,15 @@ input[type=range]{accent-color:var(--dust)} input[type=checkbox],input[type=radi
 .mv-opt .mv-cnt,.mv-opt .mv-cur{border-radius:2px}
 .mv-opt.mine{border-color:var(--dust);box-shadow:0 0 0 2px rgba(229,154,82,.35)}
 .mv-time{background:var(--hover)}
+
+/* settings > ویو مدل */
+.vm-pane{display:flex;flex-direction:column;gap:8px}
+.vm-pane select{width:100%;padding:8px;background:var(--panel-solid);color:var(--sand);border:1px solid var(--line-2);border-radius:3px;font:inherit}
+.vm-pane h4{margin:8px 0 0;font:800 12px var(--f-head);color:var(--sand);letter-spacing:.08em}
+.vm-pane .range{grid-template-columns:96px 1fr 48px;gap:8px;font-size:13px}
+.vm-pane textarea{width:100%;min-height:70px;direction:ltr;background:#0003;color:var(--sand);border:1px solid var(--line-2);border-radius:3px;font:11px monospace;padding:6px}
+.vm-pane .vm-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.vm-pane .vm-btns button{padding:8px;border:1px solid var(--line-2);border-radius:3px}
+#settings.vm-see{background:transparent!important}
+#settings.vm-see .settings-card{opacity:.28}
+#settings.vm-see .settings-card:hover,#settings.vm-see .settings-card:focus-within{opacity:.95}

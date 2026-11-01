@@ -956,8 +956,8 @@ function buildArms(rig, k) {
 }
 export function setRigWeapon(rig, k) {
   const glb = hasGunGLB(k, rig.team);   // swap procedural -> GLB when the model arrives after the weapon was already drawn
-  if (rig.gunKey === k && rig.gunGlb === glb) return; if (rig.gun) rig.hand.remove(rig.gun);
-  rig.gun = makeGun(k, rig.team); rig.gun.scale.setScalar(GUN_SCALE); rig.hand.add(rig.gun); rig.gunKey = k; rig.gunGlb = glb;
+  if (rig.gunKey === k && rig.gunGlb === glb && rig.gunTune === TUNE.v) return; rig.gunTune = TUNE.v; if (rig.gun) rig.hand.remove(rig.gun);
+  rig.gun = makeGun(k, rig.team); applyGunTune(rig.gun, k, GUN_SCALE); rig.hand.add(rig.gun); rig.gunKey = k; rig.gunGlb = glb;
   buildArms(rig, k);
 }
 // Pose the rig. a: {speed, crouch, pitch, air, dt, alive}
@@ -981,6 +981,19 @@ export function animateRig(rig, a) {
   }
   const p = Math.max(-1.1, Math.min(1.1, a.pitch || 0));
   rig.arms.rotation.x = p * 0.9 - rig.torso.rotation.x; rig.neck.rotation.x = p * 0.5 - rig.torso.rotation.x * 0.5; rig.torso.rotation.y = Math.sin(rig.phase) * 0.05 * sp;
+}
+
+// ---------------------------------------------------------------- player-tunable view model (settings > ویو مدل)
+// TUNE.all: global viewmodel offsets; TUNE.guns[k]: gun-in-hand offset (g*), off-hand offset (l*), muzzle offset (m*)
+export const TUNE = { all: {}, guns: {}, v: 0 };
+export const TUNE_DEFAULTS = { gx: 0, gy: 0, gz: 0, gr: 0, gs: 1, lx: 0, ly: 0, lz: 0, mx: 0, my: 0, mz: 0 };
+export const tuneOf = (k) => Object.assign({}, TUNE_DEFAULTS, TUNE.guns[k] || {});
+export const bumpTune = () => { TUNE.v++; };
+// moves/rotates/scales a freshly built gun relative to the hands and shifts its muzzle (flash + tracer origin)
+export function applyGunTune(g, k, baseScale = 1) {
+  const t = tuneOf(k);
+  g.position.set(t.gx, t.gy, t.gz); g.rotation.y = (t.gr * Math.PI) / 180; g.scale.setScalar(baseScale * t.gs);
+  if (g.userData.muzzle) g.userData.muzzle.add(new THREE.Vector3(t.mx, t.my, t.mz));
 }
 
 // ---------------------------------------------------------------- first-person view model
@@ -1007,7 +1020,7 @@ export function makeViewArms(team, k) {
   else if (k === 'elite') lh = [-0.112, -0.055, 0.0];
   else if (PISTOLS.has(k)) lh = [-0.03, -0.055, 0.0];
   else { const s = supportOf(k); lh = s ? [s[0] - 0.005, s[1] - 0.025, s[2]] : [-0.035, -0.06, 0.0]; }
-  if (lh) limb(lh, [-0.26, -0.3, 0.32], 0.07);
+  if (lh) { const t = tuneOf(k); lh = [lh[0] + t.lx, lh[1] + t.ly, lh[2] + t.lz]; limb(lh, [-0.26, -0.3, 0.32], 0.07); }
   g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
   return g;
 }
