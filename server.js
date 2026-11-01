@@ -21,6 +21,7 @@ const ADMIN_KEY = loadAdminKey();
 const app = express();
 app.disable('x-powered-by');
 app.use('/shared', express.static(path.join(root, 'shared'), { maxAge: 0 }));
+app.use('/weapons', express.static(path.join(root, 'public', 'weapons'), { maxAge: '7d' }));
 app.use(express.static(path.join(root, 'public'), { maxAge: 0 }));
 // ---- Map editor API (same contract as the Cloudflare worker): /api/maps/* ----
 const BASE_DEFS = { ...MAP_DEFS };

@@ -14,6 +14,7 @@ import { StatsUI } from './stats.js';
 import { ReportUI } from './report.js';
 import { Keybinds, ACTIONS, GROUPS, codeLabel, RESERVED } from './keybinds.js';
 import { VoiceChat } from './voice.js';
+import { startGunPreload, gunsEssentialReady } from './glbguns.js';
 
 const $ = (id) => document.getElementById(id);
 const FA = (n) => String(n).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
@@ -144,10 +145,12 @@ async function refreshRooms() {
 }
 $('sv-refresh').addEventListener('click', () => { sound.ui(); ensureOnline().then(refreshRooms).catch(() => {}); refreshRooms(); });
 setInterval(refreshRooms, 2500);
+startGunPreload();   // stream the CS2 GLB weapon pack in the background
+async function waitGuns() { setStatus('', 'در حال بارگذاری مدل گان‌ها…'); await gunsEssentialReady(8000); }
 async function create(offline) {
   sound.init(); sound.ui(); const btn = offline ? $('btn-offline') : $('btn-create'); if (!btn) return; btn.disabled = true;
   try {
-    if (offline) { if (net) net.close(); net = await connectOffline(); game.attach(net); mode = 'offline'; await hello(); setStatus('ok', 'حالت آفلاین'); }
+    if (offline) { await waitGuns(); if (net) net.close(); net = await connectOffline(); game.attach(net); mode = 'offline'; await hello(); setStatus('ok', 'حالت آفلاین'); }
     else await ensureOnline();
     if (offline) {
       net.emit('create', { name: playerName(), map: settings.map, bots:'fill', difficulty:settings.difficulty, max:Number(settings.max), title:'Practice' }, (r) => { btn.disabled=false; if(!r?.ok) setStatus('bad','تمرین آفلاین اجرا نشد'); });
@@ -158,6 +161,7 @@ async function create(offline) {
 }
 async function join(code) {
   sound.init(); sound.ui(); code = String(code || '').trim().toUpperCase(); if (!code) return;
+  await waitGuns();
   try { await ensureOnline(); } catch (e) { return; }
   if (auth.required && !auth.account) { auth.open('login'); setStatus('bad', 'برای ورود به سرور اول وارد حساب کاربری شو'); return; }
   net.emit('join', { code, name: playerName(), session: sessionId }, (r) => { if (r && r.error === 'LOGIN_REQUIRED') { auth.open('login'); return; } if (!r || !r.ok) setStatus('bad', r && r.error === 'Room not found' ? 'سروری با این کد پیدا نشد' : r && r.error === 'BANNED' ? 'از این سرور بن شده‌ای' : r && r.error === 'Room is full' ? 'سرور پر است' : 'ورود انجام نشد'); });

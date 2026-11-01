@@ -5,6 +5,7 @@ import { calloutAt, inRect } from '/shared/maps.js';
 import { stepMove, rayWorld, rayPlayer, hasLOS, traceBullet, updateDoors } from '/shared/physics.js';
 import { WEAPONS, WEAPON_KEYS, NADES, inaccuracy, spreadDir } from '/shared/weapons.js';
 import { makeSoldier, setRigWeapon, animateRig, makeGun, makeViewArms } from './models.js';
+import { hasGunGLB } from './glbguns.js';
 import * as TX from './textures.js';
 import { radio } from './audio.js';
 import { MapVote } from './mapvote.js';
@@ -522,9 +523,9 @@ export class Game {
     const it = this.activeItem(); const g = this.vm.group;
     g.visible = this.alive && !this.scope && !!it && (this.team === 'T' || this.team === 'CT');
     if (!g.visible) return;
-    if (this.vmKey !== it.k || this.vmTeam !== this.team) {
+    if (this.vmKey !== it.k || this.vmTeam !== this.team || this.vmGlb !== hasGunGLB(it.k, this.team)) {
       if (this.vmGun) g.remove(this.vmGun); if (this.vmArms) g.remove(this.vmArms);
-      this.vmGun = makeGun(it.k); if (NADES.includes(it.k)) this.vmGun.scale.setScalar(1.35); this.vmGun.traverse((o) => { if (o.isMesh) o.castShadow = false; }); g.add(this.vmGun);
+      this.vmGlb = hasGunGLB(it.k, this.team); this.vmGun = makeGun(it.k, this.team); if (NADES.includes(it.k)) this.vmGun.scale.setScalar(1.35); this.vmGun.traverse((o) => { if (o.isMesh) o.castShadow = false; }); g.add(this.vmGun);
       this.vmArms = makeViewArms(this.team, it.k); g.add(this.vmArms); this.vmKey = it.k; this.vmTeam = this.team;
       const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.texStar, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true })); flash.scale.setScalar(0.32); flash.position.copy(this.vmGun.userData.muzzle); flash.visible = false; this.vmGun.add(flash); this.vmFlashSprite = flash;
     }

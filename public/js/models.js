@@ -2,6 +2,7 @@
 // Everything is built from three.js primitives + canvas textures (no downloads).
 // Conventions: weapons point down -Z with the origin at the firing-hand grip; characters face -Z.
 import * as THREE from 'three';
+import { makeGunGLB, hasGunGLB, onGunModelsChanged } from './glbguns.js';   // CS2 GLB weapon models (procedural ones stay as fallback)
 
 // ---------------------------------------------------------------- materials / textures
 const mats = {};
@@ -745,7 +746,8 @@ function makeIncendiary(g) {
 // ---------------------------------------------------------------- weapons
 const PISTOLS = new Set(['glock', 'usp', 'deagle', 'zeus', 'p2000', 'elite', 'p250', 'tec9', 'fiveseven', 'cz75', 'r8']), NADE_KEYS = new Set(['he', 'flash', 'smoke', 'decoy', 'molotov', 'incendiary']);
 const RIFLES = new Set(['ak47','m4a4','awp','mac10','mp9','p90','galil','famas','m4a1s','sg553','aug','mp7','mp5sd','ump45','bizon','ssg08','g3sg1','scar20','nova','xm1014','sawedoff','mag7','m249','negev']);
-export function makeGun(k) {
+export function makeGun(k, team) {
+  const glb = makeGunGLB(k, team); if (glb) return glb;   // real CS2 model once it has streamed in
   const g = new THREE.Group(); g.name = 'gun:' + k;
   const blk = mat('blk', '#2a2d31', 0.45, 0.55), gun = mat('gunm', '#3a3e44', 0.38, 0.65), wood = mat('wood', '#7b4a22', 0.65), wood2 = mat('wood2', '#5d3417', 0.7);
   const tan = mat('tan', '#b59a6a', 0.8), olive = mat('olive', '#4d5b3c', 0.6, 0.2), silver = mat('silver', '#b9bcc0', 0.25, 0.9), poly = mat('poly', '#33332f', 0.65);
@@ -953,8 +955,9 @@ function buildArms(rig, k) {
   grp.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
 }
 export function setRigWeapon(rig, k) {
-  if (rig.gunKey === k) return; if (rig.gun) rig.hand.remove(rig.gun);
-  rig.gun = makeGun(k); rig.gun.scale.setScalar(GUN_SCALE); rig.hand.add(rig.gun); rig.gunKey = k;
+  const glb = hasGunGLB(k, rig.team);   // swap procedural -> GLB when the model arrives after the weapon was already drawn
+  if (rig.gunKey === k && rig.gunGlb === glb) return; if (rig.gun) rig.hand.remove(rig.gun);
+  rig.gun = makeGun(k, rig.team); rig.gun.scale.setScalar(GUN_SCALE); rig.hand.add(rig.gun); rig.gunKey = k; rig.gunGlb = glb;
   buildArms(rig, k);
 }
 // Pose the rig. a: {speed, crouch, pitch, air, dt, alive}
@@ -982,6 +985,7 @@ export function animateRig(rig, a) {
 
 // ---------------------------------------------------------------- first-person view model
 const supportCache = {};
+onGunModelsChanged(() => { for (const k in supportCache) delete supportCache[k]; });   // off-hand anchors differ between procedural and GLB guns
 function supportOf(k) { if (!(k in supportCache)) { const g = makeGun(k); supportCache[k] = g.userData.support ? g.userData.support.toArray() : null; } return supportCache[k]; }
 export function makeViewArms(team, k) {
   const L = LOOK[team] || LOOK.CT; const g = new THREE.Group(); const isT = team === 'T';
