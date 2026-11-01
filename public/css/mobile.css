@@ -12,8 +12,8 @@ body.is-touch {
   --radar: calc(var(--u) * 2.05);
   --m-glass: rgba(12, 14, 18, .5);
   --m-glass-hi: rgba(12, 14, 18, .7);
-  --m-line: rgba(255, 255, 255, .15);
-  --m-line-hi: rgba(255, 255, 255, .32);
+  --m-line: var(--line-2);
+  --m-line-hi: var(--line-3);
   --m-text: #f6f2e9;
   --m-dim: rgba(246, 242, 233, .6);
   --m-accent: #f0a960;
@@ -26,10 +26,10 @@ body.is-touch #radar { left: var(--sl); top: var(--st); width: var(--radar); hei
 body.is-touch #loc { left: var(--sl); top: calc(var(--st) + var(--radar) + 4px); width: var(--radar); text-align: center; font: 700 9px var(--f-head); letter-spacing: .14em; color: var(--m-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 body.is-touch #money { left: var(--sl); top: calc(var(--st) + var(--radar) + 22px); font: 800 15px var(--f-head); color: #a9e8b3; gap: 3px; font-variant-numeric: tabular-nums; }
 body.is-touch #money em { font: 700 11px var(--f-head); }
-body.is-touch #buyzone { left: var(--sl); top: calc(var(--st) + var(--radar) + 44px); font-size: 0; padding: 2px 8px; border-radius: 8px; border: 1px solid rgba(240, 169, 96, .55); background: var(--m-glass); }
+body.is-touch #buyzone { left: var(--sl); top: calc(var(--st) + var(--radar) + 44px); font-size: 0; padding: 2px 8px; border-radius: 8px; border: 1px solid rgba(229,154,82,.55); background: var(--m-glass); }
 body.is-touch #buyzone::before { content: 'BUY ZONE'; font: 800 9px var(--f-head); letter-spacing: .16em; color: var(--m-accent); }
 body.is-touch #rankhud { position: absolute; left: var(--sl); top: calc(var(--st) + var(--radar) + 66px); display: flex; align-items: center; gap: 5px; padding: 2px 8px 2px 3px; border-radius: 9px; background: var(--m-glass); font: 700 9px var(--f-head); color: var(--m-dim); white-space: nowrap; }
-body.is-touch #rankhud b { padding: 1px 5px; border-radius: 6px; background: rgba(240, 169, 96, .22); color: var(--m-accent); font-weight: 800; }
+body.is-touch #rankhud b { padding: 1px 5px; border-radius: 6px; background: rgba(229,154,82,.22); color: var(--m-accent); font-weight: 800; }
 body.is-touch #rankhud small { opacity: .75; }
 
 /* top bar: CT score · timer · T score */
@@ -40,7 +40,7 @@ body.is-touch .tb-team.t { box-shadow: inset 0 -2px 0 var(--t); }
 body.is-touch .tb-team b { font: 800 18px var(--f-head); font-variant-numeric: tabular-nums; }
 body.is-touch .alive { gap: 2px; }
 body.is-touch .alive i { width: 4px; height: 11px; }
-body.is-touch .tb-mid { min-width: 0; padding: 3px 12px 2px; background: rgba(255, 255, 255, .06); }
+body.is-touch .tb-mid { min-width: 0; padding: 3px 12px 2px; background: var(--hover); }
 body.is-touch #timer { font: 800 17px/1.05 var(--f-head); font-variant-numeric: tabular-nums; }
 body.is-touch #round-no { font: 700 7px var(--f-head); letter-spacing: .2em; }
 body.is-touch #bomb-ind { font-size: 20px; }
@@ -56,8 +56,8 @@ body.is-touch #hpbox { left: auto; right: calc(50% + 5px); bottom: var(--sb); ga
 body.is-touch #hpbox > div { position: relative; gap: 6px; padding: 6px 12px 8px; }
 body.is-touch #hpbox .ar { border-left: 1px solid var(--m-line); }
 body.is-touch #hpbox b { min-width: 0; font: 800 21px/1 var(--f-head); font-variant-numeric: tabular-nums; }
-body.is-touch #hpbox .hp::after, body.is-touch #hpbox .ar::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(255, 255, 255, .85) calc(var(--v, 1) * 100%), rgba(255, 255, 255, .14) 0); }
-body.is-touch #hpbox .hp.low::after { background: linear-gradient(90deg, var(--m-red) calc(var(--v, 1) * 100%), rgba(255, 255, 255, .14) 0); }
+body.is-touch #hpbox .hp::after, body.is-touch #hpbox .ar::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(255, 255, 255, .85) calc(var(--v, 1) * 100%), var(--line-2) 0); }
+body.is-touch #hpbox .hp.low::after { background: linear-gradient(90deg, var(--m-red) calc(var(--v, 1) * 100%), var(--line-2) 0); }
 body.is-touch .ico-plus { width: 14px; height: 14px; }
 body.is-touch .ico-plus::before { left: 5px; width: 4px; height: 14px; }
 body.is-touch .ico-plus::after { top: 5px; width: 14px; height: 4px; }
@@ -78,7 +78,7 @@ body.is-touch #chat.open { width: min(56vw, 420px); }
 body.is-touch #chat.open .cm:nth-last-child(n+4) { display: block; }
 body.is-touch .chat-compose { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
 body.is-touch #chat-in { flex: 1; min-width: 0; margin: 0; padding: 8px 12px; font-size: 14px; border-radius: 12px; border-color: var(--m-accent); }
-body.is-touch #chat-send { pointer-events: auto; flex: 0 0 40px; height: 36px; border-radius: 12px; background: var(--m-accent); color: #1a1008; font-weight: 900; }
+body.is-touch #chat-send { pointer-events: auto; flex: 0 0 40px; height: 36px; border-radius: 12px; background: var(--m-accent); color: var(--ink); font-weight: 900; }
 
 /* centre messages */
 body.is-touch #center { top: 17%; }
@@ -104,10 +104,10 @@ body.is-touch #death { bottom: calc(var(--sb) + 52px); padding: 6px 16px; border
 #touch .tb { --b: var(--u); width: var(--b); height: var(--b); display: grid; place-items: center; border-radius: 50%; color: var(--m-text); background: var(--m-glass); border: 1.5px solid var(--m-line-hi); box-shadow: 0 4px 14px rgba(0, 0, 0, .28); transition: background .08s, border-color .08s, filter .08s; }
 #touch .tb svg { width: 46%; height: 46%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
 #touch .tb span { font: 800 calc(var(--b) * .42) var(--f-head); pointer-events: none; }
-#touch .tb:active, #touch .tb.on { background: rgba(240, 169, 96, .36); border-color: var(--m-accent); filter: brightness(1.15); }
+#touch .tb:active, #touch .tb.on { background: rgba(229,154,82,.36); border-color: var(--m-accent); filter: brightness(1.15); }
 #t-fire { --b: calc(var(--u) * 1.75); background: rgba(214, 62, 50, .34); border-color: rgba(255, 150, 140, .6); }
 #t-fire svg { width: 40%; height: 40%; stroke-width: 2.2; }
-#t-fire::after { content: ''; position: absolute; inset: 13%; border-radius: 50%; border: 1.5px solid rgba(255, 255, 255, .2); pointer-events: none; }
+#t-fire::after { content: ''; position: absolute; inset: 13%; border-radius: 50%; border: 1.5px solid var(--line-2); pointer-events: none; }
 #t-fire:active { background: rgba(214, 62, 50, .62); border-color: #ff9c92; }
 #t-fire2 { --b: calc(var(--u) * 1.05); }
 #t-jump { --b: calc(var(--u) * 1.12); }
@@ -127,11 +127,11 @@ body[data-wk="melee"] #touch #t-fire2 { display: grid; }
 body.has-bomb #touch #t-use, body.bomb-planted #touch #t-use { display: grid; }
 
 /* joystick */
-#t-stick { width: calc(var(--u) * 2.7); height: calc(var(--u) * 2.7); border-radius: 50%; border: 1.5px solid var(--m-line-hi); background: radial-gradient(circle, rgba(255, 255, 255, .05) 0 36%, rgba(12, 14, 18, .3) 37% 100%); }
+#t-stick { width: calc(var(--u) * 2.7); height: calc(var(--u) * 2.7); border-radius: 50%; border: 1.5px solid var(--m-line-hi); background: radial-gradient(circle, var(--hover) 0 36%, rgba(12, 14, 18, .3) 37% 100%); }
 #t-stick::before { content: ''; position: absolute; inset: -18px; border-radius: 50%; }   /* bigger grab area */
-#t-stick i { position: absolute; left: 50%; top: 50%; width: 38%; aspect-ratio: 1; margin: -19%; border-radius: 50%; background: rgba(255, 255, 255, .26); border: 1.5px solid rgba(255, 255, 255, .72); box-shadow: 0 3px 10px rgba(0, 0, 0, .35); }
+#t-stick i { position: absolute; left: 50%; top: 50%; width: 38%; aspect-ratio: 1; margin: -19%; border-radius: 50%; background: var(--line-2); border: 1.5px solid rgba(255, 255, 255, .72); box-shadow: 0 3px 10px rgba(0, 0, 0, .35); }
 #t-stick.held { border-color: var(--m-accent); }
-#t-stick.held i { background: rgba(240, 169, 96, .5); border-color: #ffd7ac; }
+#t-stick.held i { background: rgba(229,154,82,.5); border-color: #ffd7ac; }
 
 /* weapon bar: tap = select, long-press = drop */
 #t-slots { display: flex; gap: 4px; padding: 4px; border-radius: 15px; background: var(--m-glass); border: 1px solid var(--m-line); }
@@ -141,7 +141,7 @@ body.has-bomb #touch #t-use, body.bomb-planted #touch #t-use { display: grid; }
 #t-slots .slot img { display: block; height: calc(var(--u) * .4); width: auto; max-width: calc(var(--u) * 1.25); object-fit: contain; opacity: .62; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); pointer-events: none; }
 #t-slots .slot svg { width: calc(var(--u) * .4); height: calc(var(--u) * .4); fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; opacity: .7; pointer-events: none; }
 #t-slots .slot i { font: 800 12px var(--f-head); font-style: normal; opacity: .75; pointer-events: none; }
-#t-slots .slot.on { background: rgba(240, 169, 96, .22); border-color: rgba(240, 169, 96, .75); color: var(--m-text); }
+#t-slots .slot.on { background: rgba(229,154,82,.22); border-color: rgba(229,154,82,.75); color: var(--m-text); }
 #t-slots .slot.on img, #t-slots .slot.on svg, #t-slots .slot.on i { opacity: 1; }
 #t-slots .slot.on b { color: var(--m-accent); }
 #t-slots .slot.bomb:not(.on) i { color: var(--m-red); }
@@ -152,12 +152,12 @@ body.ui-editing #touch { visibility: visible; }
 #touch.touch-dead .tc:not(#t-pause):not(#t-score):not(#t-chat) { visibility: hidden; pointer-events: none; }
 
 /* ------------------------------------------------------------------ UI editor */
-#touch.editing { z-index: 60; background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .045) 0 1px, transparent 1px 2vh), repeating-linear-gradient(90deg, rgba(255, 255, 255, .045) 0 1px, transparent 1px 2.5vw), rgba(0, 0, 0, .3); }
+#touch.editing { z-index: 60; background: repeating-linear-gradient(0deg, var(--hover) 0 1px, transparent 1px 2vh), repeating-linear-gradient(90deg, var(--hover) 0 1px, transparent 1px 2.5vw), rgba(0, 0, 0, .3); }
 #touch.editing #t-look { pointer-events: none; }
-body.ui-editing #touch .tc { display: grid !important; visibility: visible !important; pointer-events: auto !important; outline: 2px dashed rgba(255, 255, 255, .4); outline-offset: 3px; cursor: grab; }
+body.ui-editing #touch .tc { display: grid !important; visibility: visible !important; pointer-events: auto !important; outline: 2px dashed var(--line-3); outline-offset: 3px; cursor: grab; }
 body.ui-editing #touch #t-slots { display: flex !important; min-height: calc(var(--u) * .9); min-width: calc(var(--u) * 3); }
 body.ui-editing #touch #t-slots:empty::before { content: 'WEAPONS'; margin: auto; font: 800 10px var(--f-head); letter-spacing: .2em; color: var(--m-dim); }
-body.ui-editing #touch .tc.ue-sel { outline: 3px solid var(--m-accent); box-shadow: 0 0 22px rgba(240, 169, 96, .55); }
+body.ui-editing #touch .tc.ue-sel { outline: 3px solid var(--m-accent); box-shadow: 0 0 22px rgba(229,154,82,.55); }
 body.ui-editing #touch .tc.ghost-hidden { filter: grayscale(1); }
 #ui-editor { position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 70; width: min(560px, 94vw); display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; direction: rtl; border-radius: 16px; background: rgba(12, 14, 18, .9); border: 1px solid var(--m-line-hi); }
 .ue-head { display: flex; justify-content: space-between; align-items: center; }
@@ -167,9 +167,9 @@ body.ui-editing #touch .tc.ghost-hidden { filter: grayscale(1); }
 .ue-row label { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--m-dim); }
 .ue-row label input { flex: 1; accent-color: var(--m-accent); }
 .ue-row label b { min-width: 38px; font: 700 11px var(--f-head); color: var(--m-text); }
-.ue-btns button { flex: 1; min-height: 36px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--m-line-hi); background: rgba(255, 255, 255, .06); font-size: 12px; font-weight: 700; color: var(--m-text); }
+.ue-btns button { flex: 1; min-height: 36px; padding: 6px 8px; border-radius: 10px; border: 1px solid var(--m-line-hi); background: var(--hover); font-size: 12px; font-weight: 700; color: var(--m-text); }
 .ue-btns button.on { border-color: var(--m-accent); color: var(--m-accent); }
-.ue-btns .cta { background: var(--m-accent); border-color: var(--m-accent); color: #1a1008; }
+.ue-btns .cta { background: var(--m-accent); border-color: var(--m-accent); color: var(--ink); }
 .ue-tip { text-align: center; font-size: 11px; color: var(--m-dim); }
 
 /* ---- voice chat on touch: mic button + who is talking ---- */
@@ -178,10 +178,10 @@ body.is-touch .vc-item { padding: 2px 8px 2px 6px; font-size: 11px; }
 body.is-touch #vc-ind { left: auto; right: auto; left: calc(50% - 74px); bottom: calc(var(--sb) + 62px); }
 #t-mic { --b: calc(var(--u) * 1.04); }
 body:not(.voice-on) #touch #t-mic { display: none; }
-#t-mic.vc-on { border-color: #4cd388; color: #bff5d4; }
-#t-mic.vc-tx { background: rgba(76, 211, 136, .42); border-color: #4cd388; box-shadow: 0 0 0 4px rgba(76, 211, 136, .25), 0 0 22px rgba(76, 211, 136, .55); animation: vcglow .7s infinite alternate; }
+#t-mic.vc-on { border-color: var(--ok); color: #bff5d4; }
+#t-mic.vc-tx { background: rgba(76, 211, 136, .42); border-color: var(--ok); box-shadow: 0 0 0 4px rgba(76, 211, 136, .25), 0 0 22px rgba(76, 211, 136, .55); animation: vcglow .7s infinite alternate; }
 #t-mic.vc-muted { color: #ff8c94; border-color: rgba(239, 93, 104, .7); }
-#t-mic.vc-denied { color: rgba(255, 255, 255, .4); border-color: rgba(239, 93, 104, .8); }
+#t-mic.vc-denied { color: var(--line-3); border-color: rgba(239, 93, 104, .8); }
 #t-mic.vc-muted::after, #t-mic.vc-denied::after { content: ''; position: absolute; width: 58%; height: 2.5px; border-radius: 2px; background: #ff5a64; transform: rotate(-45deg); pointer-events: none; }
 @keyframes vcglow { to { box-shadow: 0 0 0 7px rgba(76, 211, 136, .12), 0 0 30px rgba(76, 211, 136, .7); } }
 

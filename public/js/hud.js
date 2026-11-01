@@ -108,13 +108,13 @@ export class HUD {
   chat(e) {
     const log = $('chat-log'), d = document.createElement('div');
     if (e.sys) { d.className = 'cm sys'; d.textContent = e.msg; }
-    else { d.className = 'cm'; d.innerHTML = `${e.dead ? '<span style="color:#aaa">*DEAD* </span>' : ''}${e.teamOnly ? '<span style="color:#aaa">(Team) </span>' : ''}<span class="n ${e.team}">${esc(e.name)}</span>: ${esc(e.msg)}`; }
+    else { d.className = 'cm'; d.innerHTML = `${e.dead ? '<span style="color:var(--sand-dim)">*DEAD* </span>' : ''}${e.teamOnly ? '<span style="color:var(--sand-dim)">(Team) </span>' : ''}<span class="n ${e.team}">${esc(e.name)}</span>: ${esc(e.msg)}`; }
     log.appendChild(d); while (log.children.length > 8) log.firstChild.remove(); setTimeout(() => d.classList.add('old'), 9000);
   }
   scoreboard(show, roster, meId, score, room) {
     const sb = $('scoreboard'); sb.hidden = !show; if (!show) return;
     const me = roster.find((p) => p.id === meId); const rows = (t) => roster.filter((p) => p.team === t).sort((a, b) => b.k - a.k || a.d - b.d).map((p) =>
-      `<div class="sb-row ${p.id === meId ? 'me' : ''} ${p.alive ? '' : 'dead'}"><div>${esc(p.name)}${p.pid ? `<small class="pid">#${String(p.pid).slice(-4)}</small>` : ''}${p.bot ? '<span class="bt">BOT</span>' : ''}${p.bomb && me && me.team === 'T' ? ' <span style="color:#ff6b6b">C4</span>' : ''}</div><span>${me && (me.team === t || me.team === 'SPEC') ? '$' + p.money : ''}</span><span>${p.k}</span><span>${p.a}</span><span>${p.d}</span><span>${p.bot ? 'BOT' : p.ping || ''}</span><span>${p.alive ? '' : 'DEAD'}</span></div>`).join('');
+      `<div class="sb-row ${p.id === meId ? 'me' : ''} ${p.alive ? '' : 'dead'}"><div>${esc(p.name)}${p.pid ? `<small class="pid">#${String(p.pid).slice(-4)}</small>` : ''}${p.bot ? '<span class="bt">BOT</span>' : ''}${p.bomb && me && me.team === 'T' ? ' <span style="color:var(--red)">C4</span>' : ''}</div><span>${me && (me.team === t || me.team === 'SPEC') ? '$' + p.money : ''}</span><span>${p.k}</span><span>${p.a}</span><span>${p.d}</span><span>${p.bot ? 'BOT' : p.ping || ''}</span><span>${p.alive ? '' : 'DEAD'}</span></div>`).join('');
     const hdr = '<div class="sb-row hdr"><div>PLAYER</div><span>MONEY</span><span>K</span><span>A</span><span>D</span><span>PING</span><span></span></div>';
     const spec = roster.filter((p) => p.team === 'SPEC').map((p) => esc(p.name)).join(', ');
     const mapLabel = ({ dust2: 'DUST II', mirage: 'MIRAGE', inferno: 'INFERNO', warehouse: 'WAREHOUSE', bazaar: 'BAZAAR', arena: 'ARENA' })[room.map] || String(room.map || '').toUpperCase();

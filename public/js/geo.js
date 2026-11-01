@@ -40,11 +40,14 @@ export class Geo {
     const N = (nx, nz) => [nx * co + nz * si, 0, -nx * si + nz * co];
     const hx = sx / 2, hz = sz / 2, x0 = cx - hx, x1 = cx + hx, z0 = cz - hz, z1 = cz + hz, y1 = y0 + sy;
     const q = (a, b, c2, d, n, cc) => this.quad(P(...a), P(...b), P(...c2), P(...d), n, [[0, 0], [uvScale, 0], [uvScale, uvScale], [0, uvScale]], cc);
+    // side faces are listed bottom-left -> bottom-right when seen from OUTSIDE the box; quad() wants them counter-clockwise from the
+    // normal side, so they are emitted in the order a, d, c, b (fixes boxes that looked hollow / inside-out)
+    const qs = (a, b, c2, d, n, cc) => this.quad(P(...a), P(...d), P(...c2), P(...b), n, [[0, 0], [0, uvScale], [uvScale, uvScale], [uvScale, 0]], Array.isArray(cc[0]) ? [cc[0], cc[3], cc[2], cc[1]] : cc);
     q([x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0], [0, 1, 0], mulRGB(k, 1.08));
-    q([x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], N(0, -1), [mulRGB(k, 0.7), mulRGB(k, 0.7), k, k]);
-    q([x1, y0, z1], [x0, y0, z1], [x0, y1, z1], [x1, y1, z1], N(0, 1), [mulRGB(k, 0.7), mulRGB(k, 0.7), k, k]);
-    q([x0, y0, z1], [x0, y0, z0], [x0, y1, z0], [x0, y1, z1], N(-1, 0), [mulRGB(k, 0.75), mulRGB(k, 0.75), mulRGB(k, 0.95), mulRGB(k, 0.95)]);
-    q([x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0], N(1, 0), [mulRGB(k, 0.75), mulRGB(k, 0.75), mulRGB(k, 0.95), mulRGB(k, 0.95)]);
+    qs([x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], N(0, -1), [mulRGB(k, 0.7), mulRGB(k, 0.7), k, k]);
+    qs([x1, y0, z1], [x0, y0, z1], [x0, y1, z1], [x1, y1, z1], N(0, 1), [mulRGB(k, 0.7), mulRGB(k, 0.7), k, k]);
+    qs([x0, y0, z1], [x0, y0, z0], [x0, y1, z0], [x0, y1, z1], N(-1, 0), [mulRGB(k, 0.75), mulRGB(k, 0.75), mulRGB(k, 0.95), mulRGB(k, 0.95)]);
+    qs([x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0], N(1, 0), [mulRGB(k, 0.75), mulRGB(k, 0.75), mulRGB(k, 0.95), mulRGB(k, 0.95)]);
   }
   // upright cylinder / cone frustum (r0 bottom, r1 top)
   tcyl(T, cx, y0, cz, r0, r1, h, seg, c) {
@@ -54,7 +57,7 @@ export class Geo {
       const a0 = (j / seg) * Math.PI * 2, a1 = ((j + 1) / seg) * Math.PI * 2, am = (a0 + a1) / 2;
       const n = [Math.cos(am) * co + Math.sin(am) * si, (r0 - r1) / Math.max(h, 1e-3) * 0.5, -Math.cos(am) * si + Math.sin(am) * co];
       const nl = Math.hypot(...n); const nn = [n[0] / nl, n[1] / nl, n[2] / nl];
-      this.quad(P(cx + Math.cos(a0) * r0, y0, cz + Math.sin(a0) * r0), P(cx + Math.cos(a1) * r0, y0, cz + Math.sin(a1) * r0), P(cx + Math.cos(a1) * r1, y0 + h, cz + Math.sin(a1) * r1), P(cx + Math.cos(a0) * r1, y0 + h, cz + Math.sin(a0) * r1), nn, [[0, 0], [1, 0], [1, 1], [0, 1]], [mulRGB(k, 0.72), mulRGB(k, 0.72), k, k]);
+      this.quad(P(cx + Math.cos(a0) * r0, y0, cz + Math.sin(a0) * r0), P(cx + Math.cos(a0) * r1, y0 + h, cz + Math.sin(a0) * r1), P(cx + Math.cos(a1) * r1, y0 + h, cz + Math.sin(a1) * r1), P(cx + Math.cos(a1) * r0, y0, cz + Math.sin(a1) * r0), nn, [[0, 0], [0, 1], [1, 1], [1, 0]], [mulRGB(k, 0.72), k, k, mulRGB(k, 0.72)]);
     }
     if (r1 > 0.01) for (let j = 0; j < seg; j++) { // cap
       const a0 = (j / seg) * Math.PI * 2, a1 = ((j + 1) / seg) * Math.PI * 2, tk = mulRGB(k, 1.08);
