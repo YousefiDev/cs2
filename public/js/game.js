@@ -4,7 +4,7 @@ import { PHYS, ROUND, clamp, forward, angDiff } from '/shared/constants.js';
 import { calloutAt, inRect } from '/shared/maps.js';
 import { stepMove, rayWorld, rayPlayer, hasLOS, traceBullet, updateDoors } from '/shared/physics.js';
 import { WEAPONS, WEAPON_KEYS, NADES, inaccuracy, spreadDir } from '/shared/weapons.js';
-import { makeSoldier, setRigWeapon, animateRig, makeGun, makeViewArms, TUNE, applyGunTune } from './models.js';
+import { makeSoldier, setRigWeapon, animateRig, makeGun, makeViewArms, TUNE, applyGunTune, tuneOf } from './models.js';
 import { hasGunGLB } from './glbguns.js';
 import * as TX from './textures.js';
 import { radio } from './audio.js';
@@ -540,8 +540,10 @@ export class Game {
     if (now < this.drawEnd) { const t = (this.drawEnd - now) / ((w.draw || 0.4) * 1000); y -= t * 0.25; rx -= t * 0.6; }
     if (this.reloadUntil) { const t = 1 - (this.reloadUntil - now) / (w.reload * 1000); const k = Math.sin(Math.min(1, Math.max(0, t)) * Math.PI); y -= k * 0.12; rx -= k * 0.5; rz += k * 0.4; }
     if (this.s.crouch) y += 0.01;
-    const ta = TUNE.all; g.scale.setScalar(ta.s || 1);
-    g.position.set(x + (ta.x || 0), y + (ta.y || 0), z + (ta.z || 0)); g.rotation.set(rx + 0.06 + (ta.rx || 0) * 0.01745, ry + (w.melee ? 0.35 : 0.16) + (ta.ry || 0) * 0.01745, rz - 0.04);
+    const ta = TUNE.all, tg = tuneOf(it.k), sc = ta.s || 1, L = TUNE.left ? -1 : 1;   // L = -1: left-handed view model (mirrored)
+    g.scale.set(sc * L, sc, sc);
+    g.position.set(L * (x + (ta.x || 0) + tg.px), y + (ta.y || 0) + tg.py, z + (ta.z || 0) + tg.pz);
+    g.rotation.set(rx + 0.06 + (ta.rx || 0) * 0.01745, L * (ry + (w.melee ? 0.35 : 0.16) + (ta.ry || 0) * 0.01745), L * (rz - 0.04));
     if (this.vmFlashSprite) { this.vmFlashSprite.visible = now < this.vmFlash; this.vmFlashSprite.material.rotation = Math.random() * 6; }
     this.vmCamera.fov = TUNE.all.fov || 62; this.vmCamera.aspect = this.camera.aspect; this.vmCamera.updateProjectionMatrix();
   }
@@ -756,6 +758,7 @@ export class Game {
         case 'slot4': this.switchSlot(4); break; case 'slot5': this.switchSlot(5); break; case 'slot6': this.switchSlot(6); break;
         case 'lastWeapon': if (this.lastSlot) this.switchSlot(this.lastSlot); break;
         case 'reload': this.reload(); break;
+        case 'swapHands': TUNE.left = !TUNE.left; if (this.settings && this.settings.vmTune) { this.settings.vmTune.left = TUNE.left; try { localStorage.setItem('cs-dust2', JSON.stringify(this.settings)); } catch (e) {} } this.sound.click(0.2, 700); break;
         case 'drop': if (this.alive) { this.net.emit('drop'); this.sound.click(0.2, 900); } break;
         case 'use': if (this.alive) this.net.emit('use'); break;
         case 'spec': if (!this.alive) this.specMode = this.specMode === 'fp' ? 'tp' : 'fp'; break;       // spectator camera (default V, so C/Ctrl+W stay a movement chord)

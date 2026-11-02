@@ -4,7 +4,7 @@ export const WALL = 99;
 export const WALL_TOP = 7.5;
 export const PHYS = {
   radius: 0.4, height: 1.8, crouchHeight: 1.3, eye: 1.64, crouchEye: 1.18,
-  step: 0.55, gravity: 20, jumpV: 6.7, accel: 9, airAccel: 9, airCap: 0.8, friction: 6,
+  step: 0.55, gravity: 20, jumpV: 8.0, accel: 9, airAccel: 9, airCap: 0.8, friction: 6,
 };
 export const ROUND = {
   freeze: 6, live: 115, bomb: 40, over: 6, buy: 25, maxRounds: 24, half: 12, winTo: 13,

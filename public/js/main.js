@@ -24,7 +24,7 @@ const DEF = { map: 'dust2', name: '', sens: 1.2, touchSens: 1, gyro: false, fov:
 const settings = Object.assign({}, DEF, JSON.parse(localStorage.getItem('cs-dust2') || '{}'));
 const save = () => localStorage.setItem('cs-dust2', JSON.stringify(settings));
 for (const [k, v] of Object.entries({ voiceOn: true, voiceMode: 'ptt', voiceSens: -42, voiceMic: 1, voiceVol: 1, voiceDev: '', voiceMuted: {}, voiceVols: {}, keys: {}, vmTune: { all: {}, guns: {} } })) if (settings[k] === undefined) settings[k] = v;
-TUNE.all = settings.vmTune.all || (settings.vmTune.all = {}); TUNE.guns = settings.vmTune.guns || (settings.vmTune.guns = {});   // view-model tuning lives in the saved settings
+TUNE.shared = !!settings.vmTune.shared; TUNE.left = !!settings.vmTune.left; TUNE.all = settings.vmTune.all || (settings.vmTune.all = {}); TUNE.guns = settings.vmTune.guns || (settings.vmTune.guns = {});   // view-model tuning lives in the saved settings
 const binds = new Keybinds(settings, save);   // rebindable keys (settings > کلیدها)
 const isMobile = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
 if ('serviceWorker' in navigator) {
@@ -495,11 +495,13 @@ ensureOnline().then(refreshRooms).catch(() => {});
 window.__game = game; window.__three = { renderer, scene, camera };
 
 // ---------- settings > ویو مدل: live tuning of the held gun, hands and muzzle (saved locally) ----------
-const VM_GUN = [['gx', 'گان ←→', -0.3, 0.3, 0.005], ['gy', 'گان ↑↓', -0.3, 0.3, 0.005], ['gz', 'گان جلو/عقب', -0.4, 0.4, 0.005], ['gr', 'چرخش گان °', -40, 40, 1], ['gs', 'اندازهٔ گان', 0.6, 1.6, 0.01],
+const VM_GUN = [['px', 'گان+دست ←→', -0.3, 0.3, 0.005], ['py', 'گان+دست ↑↓', -0.3, 0.3, 0.005], ['pz', 'گان+دست جلو/عقب', -0.4, 0.4, 0.005],
+  ['gx', 'گان ←→', -0.3, 0.3, 0.005], ['gy', 'گان ↑↓', -0.3, 0.3, 0.005], ['gz', 'گان جلو/عقب', -0.4, 0.4, 0.005], ['gp', 'گان بالا/پایین °', -60, 60, 1], ['gr', 'گان چپ/راست °', -180, 180, 1], ['gl', 'گان چرخش لوله °', -180, 180, 1], ['gs', 'اندازهٔ گان', 0.6, 1.6, 0.01],
   ['lx', 'دست چپ ←→', -0.3, 0.3, 0.005], ['ly', 'دست چپ ↑↓', -0.3, 0.3, 0.005], ['lz', 'دست چپ جلو/عقب', -0.4, 0.4, 0.005],
   ['mx', 'سر لوله ←→', -0.15, 0.15, 0.002], ['my', 'سر لوله ↑↓', -0.15, 0.15, 0.002], ['mz', 'سر لوله جلو/عقب', -0.3, 0.3, 0.005]];
 const VM_ALL = [['x', 'ویو مدل ←→', -0.25, 0.25, 0.005], ['y', 'ویو مدل ↑↓', -0.25, 0.25, 0.005], ['z', 'ویو مدل جلو/عقب', -0.3, 0.3, 0.005], ['rx', 'چرخش X °', -20, 20, 0.5], ['ry', 'چرخش Y °', -30, 30, 0.5], ['s', 'اندازهٔ کل', 0.7, 1.4, 0.01], ['fov', 'FOV ویو مدل', 45, 90, 1]];
 let vmKey = 'ak47';
+const tk = () => (TUNE.shared ? '*' : vmKey);   // shared mode edits one tuning used by every gun
 function vmCommit() { bumpTune(); save(); }
 function closeViewPane() { if (game) game.vmPreview = null; $('settings').classList.remove('vm-see'); }
 function openViewPane() {
@@ -509,6 +511,8 @@ function openViewPane() {
   const g = tuneOf(vmKey), a = TUNE.all;
   box.innerHTML = `<p class="set-note">گان را انتخاب کن و با اسلایدرها جای آن را در دست تنظیم کن. تغییرات همان لحظه روی ویو مدل دیده می‌شود و روی همین دستگاه ذخیره می‌شود.</p>
     <select id="vm-gun">${WEAPON_KEYS.map((k) => `<option value="${k}"${k === vmKey ? ' selected' : ''}>${esc(WEAPONS[k].name)}</option>`).join('')}</select>
+    <label class="check"><input type="checkbox" id="vm-shared"${TUNE.shared ? ' checked' : ''} /><span>یک ویو مدل برای همهٔ گان‌ها (تنظیم‌ها برای همه یکسان اعمال می‌شود)</span></label>
+    <label class="check"><input type="checkbox" id="vm-left"${TUNE.left ? ' checked' : ''} /><span>ویو مدل چپ‌دست (کلید H هم همین را عوض می‌کند)</span></label>
     <label class="check"><input type="checkbox" id="vm-see" /><span>شفاف‌کردن پنل برای دیدن گان (با ماوس روی پنل دوباره پررنگ می‌شود)</span></label>
     <h4>این گان</h4><div id="vm-rows-g">${VM_GUN.map(([id, l, mn, mx, st]) => row('g:' + id, l, mn, mx, st, g[id])).join('')}</div>
     <div class="vm-btns"><button id="vm-reset-g" class="ghost">ریست این گان</button><button id="vm-copy-g" class="ghost">کپی تنظیم این گان برای همهٔ گان‌ها</button></div>
@@ -522,23 +526,26 @@ function openViewPane() {
     fmt(el);
     el.oninput = () => {
       const [sc, id] = el.dataset.id.split(':'), v = +el.value;
-      if (sc === 'g') (TUNE.guns[vmKey] ||= {})[id] = v; else TUNE.all[id] = v;
+      if (sc === 'g') (TUNE.guns[tk()] ||= {})[id] = v; else TUNE.all[id] = v;
       fmt(el); vmCommit();
     };
   });
   $('vm-gun').onchange = (e) => { vmKey = e.target.value; openViewPane(); };
+  $('vm-shared').onchange = (e) => { TUNE.shared = e.target.checked; settings.vmTune.shared = TUNE.shared; vmCommit(); openViewPane(); };
+  $('vm-left').onchange = (e) => { TUNE.left = e.target.checked; settings.vmTune.left = TUNE.left; vmCommit(); };
   $('vm-see').onchange = (e) => $('settings').classList.toggle('vm-see', e.target.checked);
-  $('vm-reset-g').onclick = () => { delete TUNE.guns[vmKey]; vmCommit(); openViewPane(); };
-  $('vm-copy-g').onclick = () => { const t = { ...(TUNE.guns[vmKey] || {}) }; for (const k of WEAPON_KEYS) TUNE.guns[k] = { ...t }; vmCommit(); openViewPane(); };
+  $('vm-reset-g').onclick = () => { delete TUNE.guns[tk()]; vmCommit(); openViewPane(); };
+  $('vm-copy-g').onclick = () => { const t = { ...(TUNE.guns[tk()] || {}) }; for (const k of WEAPON_KEYS) TUNE.guns[k] = { ...t }; vmCommit(); openViewPane(); };
   $('vm-reset-a').onclick = () => { for (const k of Object.keys(TUNE.all)) delete TUNE.all[k]; vmCommit(); openViewPane(); };
   $('vm-reset-all').onclick = () => { for (const k of Object.keys(TUNE.all)) delete TUNE.all[k]; for (const k of Object.keys(TUNE.guns)) delete TUNE.guns[k]; vmCommit(); openViewPane(); };
-  $('vm-export').onclick = () => { $('vm-json').value = JSON.stringify({ all: TUNE.all, guns: TUNE.guns }); $('vm-json').select(); try { navigator.clipboard && navigator.clipboard.writeText($('vm-json').value); } catch (e) {} };
+  $('vm-export').onclick = () => { $('vm-json').value = JSON.stringify({ all: TUNE.all, guns: TUNE.guns, shared: TUNE.shared, left: TUNE.left }); $('vm-json').select(); try { navigator.clipboard && navigator.clipboard.writeText($('vm-json').value); } catch (e) {} };
   $('vm-import').onclick = () => {
     try {
       const j = JSON.parse($('vm-json').value); if (!j || typeof j !== 'object') throw 0;
       for (const k of Object.keys(TUNE.all)) delete TUNE.all[k]; for (const k of Object.keys(TUNE.guns)) delete TUNE.guns[k];
       const num = (o) => Object.fromEntries(Object.entries(o || {}).filter(([k, v]) => Number.isFinite(+v)).map(([k, v]) => [k, +v]));
-      Object.assign(TUNE.all, num(j.all)); for (const [k, v] of Object.entries(j.guns || {})) if (WEAPONS[k]) TUNE.guns[k] = num(v);
+      TUNE.shared = settings.vmTune.shared = !!j.shared; TUNE.left = settings.vmTune.left = !!j.left;
+      Object.assign(TUNE.all, num(j.all)); for (const [k, v] of Object.entries(j.guns || {})) if (WEAPONS[k] || k === '*') TUNE.guns[k] = num(v);
       vmCommit(); openViewPane();
     } catch (e) { $('vm-json').value = 'JSON نامعتبر'; }
   };

@@ -19,7 +19,7 @@ const KIND = {
   mg:      { rotY: Math.PI, sup: 0.42 },
   pistol:  { rotY: Math.PI, pistol: true },
   nade:    { rotY: Math.PI, offset: [0, 0.02, -0.035], muzzle: [0, 0, -0.05] },   // sits in the palm like the procedural nades
-  knife:   { rotX: -Math.PI / 2, scale: 1.3, tip: true },                       // blade runs along +Y in the export
+  knife:   { rotX: -Math.PI / 2, rotZ: Math.PI, scale: 1.3, tip: true },   // rotZ: edge down, spine up like the real thing                       // blade runs along +Y in the export
   c4:      { rotY: 0, offset: [0, 0, -0.08], muzzle: [0, 0, -0.2] },
 };
 // colour / roughness / metalness per model (the GLBs carry no materials)
@@ -74,7 +74,7 @@ const CFG = {
   // melee / bomb  (knife: one model per team)
   knife_ct: F('knife/knife_default_ct/weapon_knife_default_ct.glb', 'knife', '#c3cad1', 0.25, 0.92, { zones: 'knife' }),
   knife_t:  F('knife/knife_default_t/weapon_knife_default_t.glb', 'knife', '#c3cad1', 0.25, 0.92, { zones: 'knife' }),
-  c4:       F('c4/weapon_c4.glb', 'c4', '#b9a577', 0.8, 0.05, { zones: 'c4', screenPrim: 0 }),
+  c4:       F('c4/weapon_c4.glb', 'c4', '#a89968', 0.8, 0.05, { screenPrim: 0, accent: '#2b2d30', dark: '#121314' }),
   // mag7: no GLB in the pack -> keeps the procedural model
 };
 // per-weapon colours of the individual parts (body = cfg.color; slide/mag/accent/dark override the defaults)
@@ -234,7 +234,8 @@ function paintGeo(geo, prim, cfg) {
   const mag = cfg.mag ? new THREE.Color(cfg.mag) : shade(cfg.color, 0.78), accent = cfg.accent ? new THREE.Color(cfg.accent) : shade(cfg.color, 0.62);
   const slide = cfg.slide ? new THREE.Color(cfg.slide) : null;
   const put = (i, c) => { col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b; };
-  if (prim > 0 || !geo.index) { for (let i = 0; i < n; i++) put(i, dark); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); return; }
+  const isMain = cfg.screenPrim === undefined ? prim === 0 : prim !== cfg.screenPrim;
+  if (!isMain || !geo.index) { for (let i = 0; i < n; i++) put(i, dark); geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); return; }
   const { label, stats } = pieces(geo);
   let main = null; for (const [r, st] of stats) if (!main || st.n > stats.get(main).n) main = r;
   const M = stats.get(main), nade = cfg.kind === 'nade';
@@ -290,6 +291,8 @@ async function buildTemplate(tk, cfg, glb) {
   }
   // rotation * scale * offset (applied to the vertices once, so clones share geometry)
   const M = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(K.rotX || 0, K.rotY || 0, 0, 'XYZ'));
+  if (K.rotZ) M.premultiply(new THREE.Matrix4().makeRotationZ(K.rotZ));
+  if (K.pistol) M.premultiply(new THREE.Matrix4().makeTranslation(0, 0, -0.02));   // grip sits in front of the palm instead of buried in the glove
   if (K.scale) M.premultiply(new THREE.Matrix4().makeScale(K.scale, K.scale, K.scale));
   if (cfg.shift) M.premultiply(new THREE.Matrix4().makeTranslation(...cfg.shift));   // per-model grip alignment
   if (K.offset) M.premultiply(new THREE.Matrix4().makeTranslation(...K.offset));

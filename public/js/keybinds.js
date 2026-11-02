@@ -20,6 +20,7 @@ export const ACTIONS = [
   { id: 'slot6', fa: 'زئوس', def: ['Digit6', ''], g: 'weapon' },
   { id: 'lastWeapon', fa: 'سلاح قبلی', def: ['KeyQ', ''], g: 'weapon' },
   { id: 'drop', fa: 'انداختن سلاح', def: ['KeyG', ''], g: 'weapon' },
+  { id: 'swapHands', fa: 'عوض‌کردن دست گان (چپ / راست)', def: ['KeyH', ''], g: 'weapon' },
   { id: 'use', fa: 'استفاده (کاشتن / خنثی‌کردن بمب)', def: ['KeyE', ''], g: 'comm' },
   { id: 'buy', fa: 'منوی خرید', def: ['KeyB', ''], g: 'comm' },
   { id: 'scoreboard', fa: 'جدول امتیاز (نگه‌دار)', def: ['Tab', ''], g: 'comm' },

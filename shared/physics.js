@@ -36,6 +36,16 @@ export function canOccupy(m, x, z, feet, height, r = PHYS.radius) {
   return true;
 }
 // Advance a character. s: {x,y,z,vx,vy,vz,onGround,crouch}; inp: {wx,wz (world wish dir), jump, crouch, walk, speed}
+// highest floor under the character's footprint if it stood at (x, z)
+function footTop(m, x, z, r = PHYS.radius) { let h = -1e9; for (const [a, b] of PTS) { const v = heightAt(m, x + a * r, z + b * r); if (v > h) h = v; } return h; }
+// A blocked move only kills horizontal speed when the obstacle is out of reach. While jumping at a ledge the player keeps
+// their momentum, so they glide onto the top as soon as the feet clear it (previously speed was zeroed on first contact and
+// the player dropped back down in front of crates/containers).
+function canClimb(m, s, x, z) {
+  if (s.onGround) return false;
+  const reach = s.y + PHYS.step + (s.vy > 0 ? (s.vy * s.vy) / (2 * PHYS.gravity) : 0) + 0.1;
+  return footTop(m, x, z) <= reach;
+}
 export function stepMove(m, s, inp, dt) {
   const wantCrouch = !!inp.crouch;
   if (!wantCrouch && s.crouch && ceilMin(m, s.x, s.z, PHYS.radius) < s.y + PHYS.height) s.crouch = true; else s.crouch = wantCrouch;
@@ -54,8 +64,8 @@ export function stepMove(m, s, inp, dt) {
   }
   const dist = Math.hypot(s.vx, s.vz) * dt, n = Math.max(1, Math.ceil(dist / 0.2));
   for (let k = 0; k < n; k++) {
-    const nx = s.x + (s.vx * dt) / n; if (canOccupy(m, nx, s.z, s.y, height)) s.x = nx; else s.vx = 0;
-    const nz = s.z + (s.vz * dt) / n; if (canOccupy(m, s.x, nz, s.y, height)) s.z = nz; else s.vz = 0;
+    const nx = s.x + (s.vx * dt) / n; if (canOccupy(m, nx, s.z, s.y, height)) s.x = nx; else if (!canClimb(m, s, nx, s.z)) s.vx = 0;
+    const nz = s.z + (s.vz * dt) / n; if (canOccupy(m, s.x, nz, s.y, height)) s.z = nz; else if (!canClimb(m, s, s.x, nz)) s.vz = 0;
   }
   const g = groundAt(m, s.x, s.z);
   if (s.onGround) {

@@ -985,14 +985,14 @@ export function animateRig(rig, a) {
 
 // ---------------------------------------------------------------- player-tunable view model (settings > ویو مدل)
 // TUNE.all: global viewmodel offsets; TUNE.guns[k]: gun-in-hand offset (g*), off-hand offset (l*), muzzle offset (m*)
-export const TUNE = { all: {}, guns: {}, v: 0 };
-export const TUNE_DEFAULTS = { gx: 0, gy: 0, gz: 0, gr: 0, gs: 1, lx: 0, ly: 0, lz: 0, mx: 0, my: 0, mz: 0 };
-export const tuneOf = (k) => Object.assign({}, TUNE_DEFAULTS, TUNE.guns[k] || {});
+export const TUNE = { all: {}, guns: {}, v: 0, shared: false, left: false };   // shared: one tuning for every gun (guns['*']); left: left-handed view model
+export const TUNE_DEFAULTS = { px: 0, py: 0, pz: 0, gx: 0, gy: 0, gz: 0, gp: 0, gr: 0, gl: 0, gs: 1, lx: 0, ly: 0, lz: 0, mx: 0, my: 0, mz: 0 };
+export const tuneOf = (k) => Object.assign({}, TUNE_DEFAULTS, TUNE.guns[TUNE.shared ? '*' : k] || {});
 export const bumpTune = () => { TUNE.v++; };
 // moves/rotates/scales a freshly built gun relative to the hands and shifts its muzzle (flash + tracer origin)
 export function applyGunTune(g, k, baseScale = 1) {
   const t = tuneOf(k);
-  g.position.set(t.gx, t.gy, t.gz); g.rotation.y = (t.gr * Math.PI) / 180; g.scale.setScalar(baseScale * t.gs);
+  const d = Math.PI / 180; g.position.set(t.gx, t.gy, t.gz); g.rotation.set(t.gp * d, t.gr * d, t.gl * d); g.scale.setScalar(baseScale * t.gs);
   if (g.userData.muzzle) g.userData.muzzle.add(new THREE.Vector3(t.mx, t.my, t.mz));
 }
 
