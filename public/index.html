@@ -67,45 +67,54 @@
     <p id="au-note" class="au-note" hidden>با ثبت‌نام یک <b>آیدی عددی یکتا</b> می‌گیری. XP، رنک و سابقه‌ات به همین آیدی وصل می‌شود؛ پس اگر کسی هم‌نام تو بود، با تو قاطی نمی‌شود.</p>
   </div>
 </div>
-<section id="lobby" class="screen">
-  <header class="brand">
-    <div class="brand-kicker">COUNTER-STRIKE</div>
-    <h1 class="brand-title" id="brand-map">DUST&nbsp;II</h1>
-    <div class="brand-sub"><span>ONLINE</span><i></i><span id="net-status" class="status">در حال اتصال…</span></div>
+<section id="lobby" class="screen cm" data-view="play">
+  <!-- ===== top bar (like the CS2 main menu) ===== -->
+  <header class="cm-bar">
+    <div class="cm-tools">
+      <button class="cm-ico" id="cm-home" title="خانه · Home" aria-label="خانه"><svg viewBox="0 0 24 24"><path d="M3.5 11 12 4l8.5 7M6 9.5V20h4.5v-5.5h3V20H18V9.5"/></svg></button>
+      <button class="cm-ico" id="cm-stats" title="آمار و برترین‌ها" aria-label="آمار"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5a3.5 3.5 0 0 1-3.5 3.5M12 14v4M8.5 20h7"/></svg></button>
+      <button id="btn-settings" class="cm-ico" title="تنظیمات" aria-label="تنظیمات"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7"/></svg></button>
+      <button id="btn-uiedit" class="cm-ico touch-only" title="UI Editor" aria-label="UI Editor"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5"/></svg></button>
+    </div>
+    <nav class="cm-nav" aria-label="منوی اصلی">
+      <button data-view="servers"><span>SERVERS</span><small>سرورها</small></button><i></i>
+      <button data-view="practice"><span>PRACTICE</span><small>تمرین</small></button><i></i>
+      <button data-view="play" class="main on"><span>PLAY</span><small>بازی</small></button><i></i>
+      <button data-view="stats"><span>STATS</span><small>آمار</small></button><i></i>
+      <button data-view="controls"><span>CONTROLS</span><small>کنترل‌ها</small></button>
+    </nav>
+    <div class="cm-right-tools">
+      <span class="cm-net"><i></i><b id="net-status" class="status">در حال اتصال…</b></span>
+      <button class="cm-ico" id="cm-friends-btn" title="دوستان · Friends" aria-label="دوستان"><svg viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M3 20c.4-3.6 3-5.5 6-5.5s5.6 1.9 6 5.5M16 5.5a3 3 0 0 1 0 6M18 14.8c2 .6 3.3 2.4 3.6 5.2"/></svg><em id="cm-friends-dot" hidden></em></button>
+    </div>
   </header>
 
-  <div class="lobby-grid">
-    <div class="col col-play">
-      <div id="acct" class="acct" hidden>
-        <div id="acct-in" class="acct-in" hidden>
-          <div class="acct-main"><span id="acct-rank" class="acct-rank"></span><b id="acct-nick"></b></div>
-          <div class="acct-meta" dir="ltr"><span id="acct-id"></span><span id="acct-user"></span></div>
-          <div class="acct-actions"><button id="acct-nick-btn" class="icon-btn" title="تغییر نام نمایشی" aria-label="تغییر نام نمایشی">✎</button><button id="acct-pw-btn" class="icon-btn" title="تغییر رمز" aria-label="تغییر رمز">🔑</button><button id="acct-out" class="acct-out">خروج</button></div>
-        </div>
-        <div id="acct-out-box" class="acct-guest"><button id="acct-login" class="cta">ورود / ثبت‌نام</button></div>
-        <p id="acct-hint" class="acct-hint"></p>
-        <button id="open-stats" class="ghost stats-open" type="button">🏆 آمار و برترین‌ها</button>
-      </div>
-      <label class="field">
-        <span>نام بازیکن</span>
-        <input id="name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Player" dir="ltr" />
-      </label>
-      <div class="panel practice">
-        <h2>تمرین آفلاین با بات‌ها</h2>
-        <div class="picker-label">نقشه</div>
-        <div class="seg maps" data-name="map"></div>
-        <div class="picker-label">سختی بات‌ها</div>
-        <div class="seg" data-name="difficulty"><button data-v="easy">آسان</button><button data-v="normal">معمولی</button><button data-v="hard">سخت</button></div>
-        <button id="btn-offline" class="cta big-cta">شروع تمرین <small>Practice · Offline</small></button>
-      </div>
-      <p class="server-note">سرورهای آنلاین فقط توسط ادمین ساخته می‌شوند؛ از لیست سمت راست یکی را انتخاب کن.</p>
-    </div>
+  <!-- ===== left: cards (like the CS2 news column) ===== -->
+  <aside class="cm-cards" id="cm-cards" aria-label="پیشنهادها"></aside>
 
-    <div class="col col-browse">
+  <!-- ===== centre ===== -->
+  <main class="cm-main">
+    <div class="cm-party" id="cm-party" aria-label="پارتی"></div>
+
+    <section class="cm-view cm-v-play" data-pane="play">
+      <div class="cm-hero">
+        <div class="cm-title"><div class="brand-kicker">COUNTER-STRIKE</div><h1 id="brand-map">DUST&nbsp;II</h1></div>
+        <div class="cm-char" id="cm-char" aria-hidden="true"></div>
+        <div class="cm-side-switch" id="cm-side" role="group" aria-label="تیم نمایشی"><button data-side="CT" class="on">CT</button><button data-side="T">T</button></div>
+        <div class="cm-actions">
+          <button id="sv-quick" class="quick cm-go">ورود سریع</button>
+          <button class="ghost" id="cm-to-practice">تمرین با بات‌ها <small>PRACTICE</small></button>
+          <button class="ghost" id="cm-to-servers">لیست سرورها <small>SERVERS</small></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="cm-view cm-v-servers" data-pane="servers" hidden>
+      <div class="cm-view-head"><h2>SERVERS <small>سرورهای آنلاین</small></h2><button class="icon-btn cm-back" data-go="play" aria-label="بازگشت">✕</button></div>
       <div class="panel browser">
         <div class="browser-head">
           <h2>سرورهای آنلاین <span id="sv-count" class="count"></span></h2>
-          <div class="head-actions"><span id="sv-ping" class="ping-chip"></span><button id="sv-refresh" class="icon-btn" title="تازه‌سازی" aria-label="تازه‌سازی">⟳</button><button id="sv-quick" class="quick">ورود سریع</button></div>
+          <div class="head-actions"><span id="sv-ping" class="ping-chip"></span><button id="sv-refresh" class="icon-btn" title="تازه‌سازی" aria-label="تازه‌سازی">⟳</button></div>
         </div>
         <div class="sv-tools">
           <input id="sv-search" placeholder="جستجو: نام سرور، کد یا نقشه…" autocomplete="off" spellcheck="false" />
@@ -124,15 +133,53 @@
           <button id="btn-join">ورود</button>
         </div>
       </div>
+    </section>
+
+    <section class="cm-view cm-v-practice" data-pane="practice" hidden>
+      <div class="cm-view-head"><h2>PRACTICE <small>تمرین آفلاین</small></h2><button class="icon-btn cm-back" data-go="play" aria-label="بازگشت">✕</button></div>
+      <div class="panel practice">
+        <h2>تمرین آفلاین با بات‌ها</h2>
+        <div class="picker-label">نقشه</div>
+        <div class="seg maps" data-name="map"></div>
+        <div class="picker-label">سختی بات‌ها</div>
+        <div class="seg" data-name="difficulty"><button data-v="easy">آسان</button><button data-v="normal">معمولی</button><button data-v="hard">سخت</button></div>
+        <button id="btn-offline" class="cta big-cta">شروع تمرین <small>Practice · Offline</small></button>
+      </div>
+    </section>
+
+    <section class="cm-view cm-v-controls" data-pane="controls" hidden>
+      <div class="cm-view-head"><h2>CONTROLS <small>کنترل‌ها</small></h2><button class="icon-btn cm-back" data-go="play" aria-label="بازگشت">✕</button></div>
       <div class="controls-card" dir="ltr">
         <div><kbd>WASD</kbd> move</div><div><kbd>Space</kbd> jump</div><div><kbd>C / Ctrl</kbd> crouch</div><div><kbd>Shift</kbd> walk</div>
         <div><kbd>B</kbd> buy menu</div><div><kbd>R</kbd> reload</div><div><kbd>E</kbd> plant / defuse</div><div><kbd>G</kbd> drop</div>
         <div><kbd>1-5</kbd> weapons</div><div><kbd>Tab</kbd> score</div><div><kbd>Y</kbd>/<kbd>U</kbd> chat</div><div><kbd>RMB</kbd> scope</div>
       </div>
+    </section>
+  </main>
+
+  <!-- ===== right rail: profile + friends (invites come later) ===== -->
+  <aside class="cm-rail" id="cm-rail" aria-label="پروفایل و دوستان">
+      <div id="acct" class="acct" hidden>
+        <div id="acct-in" class="acct-in" hidden>
+          <div class="acct-main"><span id="acct-rank" class="acct-rank"></span><b id="acct-nick"></b></div>
+          <div class="acct-meta" dir="ltr"><span id="acct-id"></span><span id="acct-user"></span></div>
+          <div class="acct-actions"><button id="acct-nick-btn" class="icon-btn" title="تغییر نام نمایشی" aria-label="تغییر نام نمایشی">✎</button><button id="acct-pw-btn" class="icon-btn" title="تغییر رمز" aria-label="تغییر رمز">🔑</button><button id="acct-out" class="acct-out">خروج</button></div>
+        </div>
+        <div id="acct-out-box" class="acct-guest"><button id="acct-login" class="cta">ورود / ثبت‌نام</button></div>
+        <p id="acct-hint" class="acct-hint"></p>
+        <button id="open-stats" class="ghost stats-open" type="button">🏆 آمار و برترین‌ها</button>
+      </div>
+      <label class="field">
+        <span>نام بازیکن</span>
+        <input id="name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Player" dir="ltr" />
+      </label>
+    <div class="cm-friends">
+      <div class="cm-friends-head"><h3>FRIENDS <small>دوستان</small></h3><span class="count" id="cm-fr-count">0</span></div>
+      <input class="cm-fr-search" id="cm-fr-search" placeholder="جستجوی دوست…" disabled>
+      <div class="cm-friends-list" id="cm-fr-list"></div>
+      <button class="ghost cm-invite" id="cm-invite" disabled>＋ دعوت دوست <small>به‌زودی</small></button>
     </div>
-  </div>
-  <button id="btn-settings" class="corner" title="تنظیمات">⚙ تنظیمات</button>
-  <button id="btn-uiedit" class="corner corner-2 touch-only" title="UI Editor">✥ UI Editor</button>
+  </aside>
 </section>
 
 <!-- ================= TEAM SELECT ================= -->
@@ -240,7 +287,7 @@
       <h2>تنظیمات</h2>
       <button id="s-x" class="settings-close" type="button" aria-label="بستن تنظیمات" title="بستن">×</button>
     </div>
-    <div id="set-tabs" class="set-tabs"><button data-p="general" class="on">عمومی</button><button data-p="keys" id="tab-keys">کلیدها</button><button data-p="voice">وویس چت</button><button data-p="view" id="tab-view">ویو مدل</button></div>
+    <div id="set-tabs" class="set-tabs"><button data-p="general" class="on">عمومی</button><button data-p="keys" id="tab-keys">کلیدها</button><button data-p="voice">وویس چت</button></div>
     <div class="set-pane" data-pane="general">
     <label class="range"><span>حساسیت موس</span><input type="range" id="s-sens" min="0.2" max="4" step="0.05" /><b id="s-sens-v"></b></label>
     <label class="range"><span>زاویه دید (FOV)</span><input type="range" id="s-fov" min="60" max="100" step="1" /><b id="s-fov-v"></b></label>
@@ -256,7 +303,6 @@
       <div class="settings-actions"><button id="s-layout" class="ghost">✥ UI Editor · چیدمان دکمه‌ها</button></div>
     </div>
     </div>
-    <div class="set-pane" data-pane="view" hidden><div id="vm-pane" class="vm-pane"></div></div>
     <div class="set-pane" data-pane="keys" hidden>
       <p class="set-note">روی هر دکمه بزن، بعد کلید (یا دکمهٔ موس) دلخواهت را فشار بده. هر عمل می‌تواند دو کلید داشته باشد.<br>Esc = لغو · Backspace = پاک‌کردن · اگر کلید برای عمل دیگری بود، از آن برداشته می‌شود.</p>
       <div id="kb-list" class="kb-list"></div>

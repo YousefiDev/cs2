@@ -152,7 +152,11 @@ export function validateMap(m) {
   }
   const sites = Object.keys(def.sites || {});
   if (!sites.length) add('error', 'هیچ سایت بمبی تعریف نشده (حداقل سایت A لازم است)');
-  const tStart = (def.spawns.T || [])[0], ctStart = (def.spawns.CT || [])[0];
+  // representative spawn = the open-ground spawn nearest the team's centre; spawns that sit on a crate top are reported on their own
+  const standable = (p) => { const i = Math.floor(p[1]) * W + Math.floor(p[0]); return nav.walk[i] === 1 && m.mat[i] !== 4; };
+  const mid = (list) => { const ok = (list || []).filter(standable); if (!ok.length) return (list || [])[0]; const cx = ok.reduce((a, p) => a + p[0], 0) / ok.length, cz = ok.reduce((a, p) => a + p[1], 0) / ok.length; return ok.reduce((b, p) => (Math.hypot(p[0] - cx, p[1] - cz) < Math.hypot(b[0] - cx, b[1] - cz) ? p : b)); };
+  const tStart = mid(def.spawns.T), ctStart = mid(def.spawns.CT);
+  for (const t of ['T', 'CT']) (def.spawns[t] || []).forEach((p, i) => { if (nav.walk[Math.floor(p[1]) * W + Math.floor(p[0])] === 1 && m.mat[Math.floor(p[1]) * W + Math.floor(p[0])] === 4) add('warn', `اسپاون ${t} #${i + 1} روی یک جعبه/بلوک قرار دارد (بازیکن روی آن ظاهر می‌شود)`, p); });
   const tCell = tStart ? Math.floor(tStart[1]) * W + Math.floor(tStart[0]) : -1, ctCell = ctStart ? Math.floor(ctStart[1]) * W + Math.floor(ctStart[0]) : -1;
   if (tCell >= 0 && ctCell >= 0 && nav.walk[tCell] && nav.walk[ctCell]) {
     const d = field(nav, null, [ctCell]);
