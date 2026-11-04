@@ -94,6 +94,7 @@ export function initLobbyMenu({ renderer, getQuality }) {
     if (root.hidden || view !== 'play' || getQuality() === 'low') return;
     const r = slot.getBoundingClientRect(); if (r.width < 40 || r.height < 60) return;
     t += dt; px += (targetPx - px) * Math.min(1, dt * 3);
+    setRigWeapon(rig, 'usp');   // no-op until the GLB pistol has streamed in, then swaps the model
     animateRig(rig, { speed: 0, crouch: false, air: false, pitch: 0.12 + Math.sin(t * 1.2) * 0.02, dt, alive: true });
     pivot.rotation.y = px * 0.35 + Math.sin(t * 0.5) * 0.06; pivot.position.y = Math.sin(t * 1.3) * 0.006;
     const H = innerHeight, y = H - r.bottom; cam.aspect = r.width / r.height; cam.position.set(0, 1.05, 5.6 * Math.max(1, 0.92 / Math.min(1, cam.aspect * 1.6))); cam.lookAt(0, 0.93, 0); cam.updateProjectionMatrix();
