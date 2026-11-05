@@ -268,7 +268,7 @@ kbd{display:inline-block;min-width:24px;padding:2px 6px;margin-right:6px;border:
 body:has(#hud:not([hidden])) #view{filter:saturate(1.04) contrast(1.02)}
 #vignette{background:radial-gradient(ellipse at center,transparent 48%,rgba(0,0,0,.12) 78%,rgba(0,0,0,.36) 100%)}
 
-/* ==============================================================
+/* =====================================================================
    v3 mobile layer: start gate, UI editor, modal-safe touch, mobile buy
    ===================================================================== */
 .touch-only{display:none!important}
@@ -899,18 +899,6 @@ input[type=range]{accent-color:var(--dust)} input[type=checkbox],input[type=radi
 .mv-opt.mine{border-color:var(--dust);box-shadow:0 0 0 2px rgba(229,154,82,.35)}
 .mv-time{background:var(--hover)}
 
-/* settings > ویو مدل */
-.vm-pane{display:flex;flex-direction:column;gap:8px}
-.vm-pane select{width:100%;padding:8px;background:var(--panel-solid);color:var(--sand);border:1px solid var(--line-2);border-radius:3px;font:inherit}
-.vm-pane h4{margin:8px 0 0;font:800 12px var(--f-head);color:var(--sand);letter-spacing:.08em}
-.vm-pane .range{grid-template-columns:96px 1fr 48px;gap:8px;font-size:13px}
-.vm-pane textarea{width:100%;min-height:70px;direction:ltr;background:#0003;color:var(--sand);border:1px solid var(--line-2);border-radius:3px;font:11px monospace;padding:6px}
-.vm-pane .vm-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.vm-pane .vm-btns button{padding:8px;border:1px solid var(--line-2);border-radius:3px}
-#settings.vm-see{background:transparent!important}
-#settings.vm-see .settings-card{opacity:.28}
-#settings.vm-see .settings-card:hover,#settings.vm-see .settings-card:focus-within{opacity:.95}
-=======
 /* ================= CS2-style main menu (lobby) ================= */
 #lobby.cm{display:grid;grid-template-columns:minmax(220px,272px) minmax(0,1fr) minmax(250px,300px);grid-template-rows:auto minmax(0,1fr);gap:0;padding:0;overflow:hidden;direction:ltr;
   background:radial-gradient(120% 90% at 50% 55%,rgba(10,8,6,0) 0%,rgba(10,8,6,.35) 65%,rgba(10,8,6,.78) 100%),linear-gradient(180deg,rgba(8,6,4,.72) 0%,rgba(8,6,4,0) 22%,rgba(8,6,4,0) 62%,rgba(8,6,4,.72) 100%)}
@@ -1003,3 +991,21 @@ input[type=range]{accent-color:var(--dust)} input[type=checkbox],input[type=radi
 @media (max-height:700px){#lobby:not([data-view=play]) .cm-party{display:none}.cm-view .seg.maps small{display:none}.cm-view .seg.maps b{font-size:11px;padding:4px 2px}}
 @media (max-height:520px){.cm-view .seg.maps{grid-template-columns:repeat(6,minmax(0,1fr))}.cm-view .seg.maps img{aspect-ratio:3/2}.cm-view .picker-label{margin:2px 0 4px}.cm-view .seg{margin-bottom:6px}.cm-v-practice .big-cta{padding:9px}}
 .cm-fr-search:disabled{background:var(--field);color:var(--sand-dim);-webkit-text-fill-color:var(--sand-dim);cursor:not-allowed}
+
+
+
+/* lobby: weapon picker under the soldier */
+.cm-hero{min-width:0}
+.cm-guns{display:flex;align-items:center;gap:6px;width:min(100%,560px);max-width:100%;margin:2px 0 6px;position:relative;z-index:2;contain:inline-size}   /* contain: the long weapon strip must not widen the lobby grid */
+.cm-gl{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:1;min-width:0;padding:2px 0;scroll-behavior:smooth}
+.cm-gl::-webkit-scrollbar{display:none}
+.cm-gl button,.cm-gn{flex:none;padding:6px 11px;border:1px solid var(--line-3);border-radius:3px;background:rgba(0,0,0,.38);color:var(--sand);font:700 12px var(--f-head);cursor:pointer;white-space:nowrap}
+.cm-gl button:hover,.cm-gn:hover{border-color:var(--accent)}
+.cm-gl button.on{background:var(--accent);border-color:var(--accent);color:#14110b}
+@media(max-width:760px){.cm-guns{margin:0 0 4px}.cm-gl button,.cm-gn{padding:5px 9px;font-size:11px}}
+
+/* the lobby section re-uses the class name "cm" of the chat-message bubbles (width:fit-content, padding, radius, fade): neutralise it so the lobby fills the screen */
+#lobby.cm{width:auto;max-width:none;border-radius:0;transition:none;box-shadow:none}
+
+/* phones in landscape (wider than 760px but short): show only the connection dot so the top bar is not clipped */
+@media (pointer:coarse) and (max-height:520px){.cm-net b{display:none}.cm-net{padding:5px 8px}}

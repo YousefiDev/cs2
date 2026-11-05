@@ -1,6 +1,7 @@
 // CS2-style main menu: top-bar tabs, promo cards, party slots, friends rail (invites come later) and a 3D soldier.
 import * as THREE from 'three';
-import { makeSoldier, setRigWeapon, animateRig } from './models.js';
+import { makeSoldier, setRigWeapon, setRigPose, animateRig } from './models.js';
+import { WEAPONS, WEAPON_KEYS } from '/shared/weapons.js';
 import { MAP_LIST } from '/shared/maps.js';
 import { mapThumb, mapLabel, MAP_TAGS } from './lobby.js';
 
@@ -80,12 +81,26 @@ export function initLobbyMenu({ renderer, getQuality }) {
   const key = new THREE.DirectionalLight(0xffe2b8, 2.6); key.position.set(-2.4, 3.2, 3.4); scene.add(key);
   const rim = new THREE.DirectionalLight(0x7fb0ff, 1.7); rim.position.set(3, 2.2, -2.8); scene.add(rim);
   scene.add(pivot); let rig = null, t = 0, px = 0, targetPx = 0;
+  // weapon in hand (picked from the strip under the soldier, remembered between visits)
+  let gunKey = localStorage.getItem('cs-lobby-gun'); if (!WEAPONS[gunKey]) gunKey = side === 'T' ? 'ak47' : 'm4a4';
+  const gunBar = document.createElement('div'); gunBar.className = 'cm-guns';
+  gunBar.innerHTML = '<button class="cm-gn" data-d="-1" aria-label="قبلی">\u203A</button><div class="cm-gl">' + WEAPON_KEYS.map((k) => `<button data-k="${k}">${esc(WEAPONS[k].name)}</button>`).join('') + '</div><button class="cm-gn" data-d="1" aria-label="بعدی">\u2039</button>';
+  slot.parentNode.insertBefore(gunBar, slot.nextSibling);
+  function pickGun(k, scroll = true) {
+    if (!WEAPONS[k]) return; gunKey = k; localStorage.setItem('cs-lobby-gun', k);
+    gunBar.querySelectorAll('.cm-gl button').forEach((b) => { const on = b.dataset.k === k; b.classList.toggle('on', on); if (on && scroll) b.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' }); });
+  }
+  gunBar.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.k) pickGun(b.dataset.k);
+    else if (b.dataset.d) pickGun(WEAPON_KEYS[(WEAPON_KEYS.indexOf(gunKey) + (+b.dataset.d) + WEAPON_KEYS.length) % WEAPON_KEYS.length]);
+  });
   function buildRig() {
     if (rig) { pivot.remove(rig.root); rig = null; }
-    rig = makeSoldier(side); setRigWeapon(rig, 'usp'); rig.root.rotation.y = Math.PI; pivot.add(rig.root);
+    rig = makeSoldier(side); rig.pose = 'relaxed'; setRigWeapon(rig, gunKey); rig.root.rotation.y = Math.PI; pivot.add(rig.root);
     rig.root.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
   }
-  buildRig();
+  buildRig(); pickGun(gunKey, false);
   $('cm-side').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', b.dataset.side === side); b.addEventListener('click', () => { side = b.dataset.side; localStorage.setItem('cs-lobby-side', side); $('cm-side').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); buildRig(); }); });
   addEventListener('pointermove', (e) => { targetPx = (e.clientX / innerWidth - 0.5) * 2; }, { passive: true });
 
@@ -94,8 +109,8 @@ export function initLobbyMenu({ renderer, getQuality }) {
     if (root.hidden || view !== 'play' || getQuality() === 'low') return;
     const r = slot.getBoundingClientRect(); if (r.width < 40 || r.height < 60) return;
     t += dt; px += (targetPx - px) * Math.min(1, dt * 3);
-    setRigWeapon(rig, 'usp');   // no-op until the GLB pistol has streamed in, then swaps the model
-    animateRig(rig, { speed: 0, crouch: false, air: false, pitch: 0.12 + Math.sin(t * 1.2) * 0.02, dt, alive: true });
+    setRigWeapon(rig, gunKey); setRigPose(rig, 'relaxed');   // no-op until the model changes / the GLB streams in
+    animateRig(rig, { speed: 0, crouch: false, air: false, pitch: Math.sin(t * 1.2) * 0.015, dt, alive: true });
     pivot.rotation.y = px * 0.35 + Math.sin(t * 0.5) * 0.06; pivot.position.y = Math.sin(t * 1.3) * 0.006;
     const H = innerHeight, y = H - r.bottom; cam.aspect = r.width / r.height; cam.position.set(0, 1.05, 5.6 * Math.max(1, 0.92 / Math.min(1, cam.aspect * 1.6))); cam.lookAt(0, 0.93, 0); cam.updateProjectionMatrix();
     renderer.clearDepth(); renderer.setScissorTest(true); renderer.setViewport(r.left, y, r.width, r.height); renderer.setScissor(r.left, y, r.width, r.height);

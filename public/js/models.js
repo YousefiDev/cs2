@@ -930,14 +930,23 @@ function poseFor(k, gun) {
   return { grip: [0.085, 0.05, -0.32], lsh: [-0.17, 0, -0.07], useSupport: true };
 }
 const GUN_SCALE = 0.85;
+// Low-ready carry (lobby): the gun is held in front of the body, close and angled down, instead of being aimed.
+function relaxedPoseFor(k) {
+  if (PISTOLS.has(k)) return { grip: [0.11, -0.3, -0.17], tilt: 0.55, lsh: [-0.17, 0, -0.04], useSupport: true };
+  if (NADE_KEYS.has(k)) return { grip: [0.2, -0.3, -0.12], off: [-0.14, -0.36, -0.14], lsh: [-0.2, 0, 0], tilt: 0.1 };
+  if (k === 'knife') return { grip: [0.2, -0.3, -0.1], off: [-0.2, -0.42, -0.04], lsh: [-0.18, 0, 0], tilt: 0.25 };
+  if (k === 'c4') return { grip: [0.1, -0.34, -0.2], off: [-0.1, -0.34, -0.28], lsh: [-0.2, 0, 0], tilt: 0, gunOffset: [-0.085, 0, 0] };
+  return { grip: [0.1, -0.22, -0.14], tilt: 0.45, lsh: [-0.17, 0, -0.07], useSupport: true };
+}
+export function setRigPose(rig, pose) { if (rig.pose === pose) return; rig.pose = pose; if (rig.gunKey !== undefined) buildArms(rig, rig.gunKey); }
 function buildArms(rig, k) {
   if (rig.armMesh) rig.arms.remove(rig.armMesh);
   const grp = new THREE.Group(); rig.armMesh = grp; rig.arms.add(grp);
-  const P = poseFor(k, rig.gun); const V = (a) => new THREE.Vector3(...a);
+  const P = rig.pose === 'relaxed' ? relaxedPoseFor(k) : poseFor(k, rig.gun); const V = (a) => new THREE.Vector3(...a);
   const grip = V(P.grip); rig.hand.position.copy(grip); if (P.gunOffset) rig.hand.position.add(V(P.gunOffset));
-  rig.hand.rotation.set(0, 0, 0);
+  rig.hand.rotation.set(-(P.tilt || 0), 0, 0);   // relaxed pose: muzzle tilted down
   let off = P.off ? V(P.off) : null;
-  if (P.useSupport && rig.gun && rig.gun.userData.support) off = rig.gun.userData.support.clone().multiplyScalar(GUN_SCALE).add(grip);
+  if (P.useSupport && rig.gun && rig.gun.userData.support) off = rig.gun.userData.support.clone().multiplyScalar(GUN_SCALE).applyEuler(rig.hand.rotation).add(grip);
   if (!off) off = V([-0.22, -0.46, -0.06]);
   const { shirt, glove, skin, vest } = rig.look; const isT = rig.team === 'T';
   const arm = (S, Tg, side) => {
@@ -950,6 +959,7 @@ function buildArms(rig, k) {
     const h = rbox(0.06, 0.08, 0.095, 0.022, glove, Tg.x, Tg.y, Tg.z, grp); h.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), Tg.clone().sub(E).normalize());
   };
   const lsh = V(P.lsh);
+  if (rig.pose === 'relaxed') { const d = off.distanceTo(lsh); if (d > 0.52) off.lerp(lsh, 1 - 0.52 / d); }   // keep long guns within reach of the left arm
   arm(new THREE.Vector3(0.2, 0, 0), grip, 1);
   arm(lsh, off, -1);
   grp.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; } });
