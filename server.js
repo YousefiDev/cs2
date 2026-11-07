@@ -21,6 +21,19 @@ const ADMIN_KEY = loadAdminKey();
 const app = express();
 app.disable('x-powered-by');
 app.use('/shared', express.static(path.join(root, 'shared'), { maxAge: 0 }));
+// ---- mesh maps (.bin): big files live next to the maps; the map def only references them (def.mesh.url = /mapmesh/<id>)
+const MESH_DIR = path.join(root, 'maps-mesh'); fs.mkdirSync(MESH_DIR, { recursive: true });
+app.use('/mapmesh', express.static(MESH_DIR, { maxAge: '1h' }));
+app.put('/api/maps/mesh/:id/:kind', (req, res) => {
+  const key = req.get('x-admin-key') || req.query.key; if (!ADMIN_KEY || key !== ADMIN_KEY) return res.status(401).json({ error: 'کلید مدیر لازم است' });
+  const { id, kind } = req.params; if (!/^[a-z0-9_-]{2,32}$/.test(id) || !['json', 'bin'].includes(kind)) return res.status(400).json({ error: 'نام یا نوع فایل نامعتبر' });
+  const MAX = 400 * 1024 * 1024, len = +req.get('content-length') || 0; if (len > MAX) return res.status(413).json({ error: 'فایل بزرگ‌تر از ۴۰۰ مگابایت' });
+  const tmp = path.join(MESH_DIR, `.${id}.${kind}.part`), out = fs.createWriteStream(tmp); let got = 0, bad = false;
+  req.on('data', (c) => { got += c.length; if (got > MAX && !bad) { bad = true; req.destroy(); out.destroy(); fs.rm(tmp, () => {}); } });
+  req.pipe(out);
+  out.on('finish', () => { if (bad) return; fs.renameSync(tmp, path.join(MESH_DIR, `${id}.${kind}`)); res.json({ ok: true, bytes: got, url: `/mapmesh/${id}` }); });
+  out.on('error', () => { if (!res.headersSent) res.status(500).json({ error: 'خطا در ذخیره فایل' }); });
+});
 app.use('/weapons', express.static(path.join(root, 'public', 'weapons'), { maxAge: '7d' }));
 app.use(express.static(path.join(root, 'public'), { maxAge: 0 }));
 // ---- Map editor API (same contract as the Cloudflare worker): /api/maps/* ----
@@ -28,7 +41,11 @@ const BASE_DEFS = { ...MAP_DEFS };
 const CUSTOM_MAPS_FILE = path.join(root, 'maps-custom.json');
 let customMaps = {};
 try { if (fs.existsSync(CUSTOM_MAPS_FILE)) customMaps = JSON.parse(fs.readFileSync(CUSTOM_MAPS_FILE, 'utf8')) || {}; } catch (e) { console.error('[maps] could not read maps-custom.json:', e.message); }
-const applyCustomMaps = () => { for (const id of registerCustomMaps(customMaps)) dropNav(id); };
+// maps/*.json (shipped with the project, e.g. maps/dust2_cs.json made by tools/bin2map.mjs) are live without an editor import; maps saved in the editor override them
+const MAPS_DIR = path.join(root, 'maps');
+const readMapFiles = () => { const out = {}; try { for (const f of fs.readdirSync(MAPS_DIR)) { if (!f.endsWith('.json')) continue; try { const d = JSON.parse(fs.readFileSync(path.join(MAPS_DIR, f), 'utf8')); if (d && /^[a-z0-9_-]{2,32}$/.test(d.id) && Array.isArray(d.size) && Array.isArray(d.areas) && Array.isArray(d.crates) && !BASE_DEFS[d.id]) out[d.id] = d; } catch (e) { console.error('[maps] skipped maps/' + f + ':', e.message); } } } catch (e) { /* no maps dir */ } return out; };
+const effectiveMaps = () => ({ ...readMapFiles(), ...customMaps });
+const applyCustomMaps = () => { for (const id of registerCustomMaps(effectiveMaps())) dropNav(id); };
 applyCustomMaps();
 const mapsApi = express.Router();
 mapsApi.use(express.json({ limit: '12mb' }));
@@ -36,7 +53,7 @@ mapsApi.get('/health', (_req, res) => res.json({ ok: true, service: 'cs2', route
 mapsApi.post('/auth', (req, res) => { const ok = typeof req.body?.key === 'string' && req.body.key === ADMIN_KEY; res.status(ok ? 200 : 401).json({ ok, error: ok ? null : 'unauthorized' }); });
 mapsApi.get('/definitions', (_req, res) => res.json(BASE_DEFS));
 mapsApi.get('/list', (_req, res) => res.json(Object.values(MAP_DEFS).map((d) => ({ id: d.id, name: d.name }))));
-mapsApi.get('/custom', (_req, res) => res.json(customMaps));
+mapsApi.get('/custom', (_req, res) => res.json(effectiveMaps()));
 mapsApi.post('/save', (req, res) => {
   const body = req.body || {};
   if (body.key !== ADMIN_KEY) return res.status(401).json({ ok: false, error: 'unauthorized' });

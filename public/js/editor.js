@@ -6,6 +6,8 @@ import { stepMove, hasLOS } from '/shared/physics.js';
 import { buildNav } from '/shared/nav.js';
 import { PHYS, WALL } from '/shared/constants.js';
 import { buildWorld } from './world.js';
+import { bakeMesh, guessScale } from '/shared/meshbake.js';
+import { registerMeshSource } from './meshview.js';
 
 const $ = (id) => document.getElementById(id);
 const MATCOL = ['#2a2623', '#c9ad83', '#d8c29c', '#a99273', '#8a5a2b', '#a07a4e', '#a98d68', '#b9a07c', '#5f8a3a', '#9a9a98', '#8c9399', '#eef3f8', '#3a3c40'];
@@ -371,9 +373,44 @@ $('bAuto').onclick = () => {
 $('bExp').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(def, null, 1)], { type: 'application/json' })); a.download = curId + '.json'; a.click(); };
 $('bImp').onclick = () => $('file').click();
 $('file').onchange = async (e) => { const f = e.target.files[0]; if (!f) return; try { const d = JSON.parse(await f.text()); if (!d.id || !/^[a-z0-9_-]{2,32}$/.test(d.id)) d.id = (f.name.replace(/\.json$/, '').toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'imported').slice(0, 32); if (maps[d.id] && !confirm('این شناسه وجود دارد؛ جایگزین شود؟')) return; maps[d.id] = ensure(d); customIds.add(d.id); selectMap(d.id); commit('وارد شد'); } catch (err) { toast('JSON نامعتبر: ' + err.message, 5000); } e.target.value = ''; };
+// ---- mesh maps: pick <name>.json + <name>.bin (cs-map-bin) -> bake a playable grid map, keep the mesh for rendering
+const pendingMesh = new Map();   // id -> { manifest, file }  (uploaded to the server on save)
+$('bBin').onclick = () => $('fileBin').click();
+$('fileBin').onchange = async (e) => {
+  const files = [...e.target.files]; e.target.value = '';
+  const jf = files.find((f) => /\.json$/i.test(f.name)), bf = files.find((f) => /\.bin$/i.test(f.name));
+  if (!jf || !bf) return toast('هر دو فایل .json و .bin را با هم انتخاب کن', 5000);
+  try {
+    toast('در حال خواندن فایل‌ها…', 120000); const manifest = JSON.parse(await jf.text()), buf = await bf.arrayBuffer();
+    if (manifest.bin && manifest.bin !== bf.name) console.warn('bin name differs from the manifest:', manifest.bin, bf.name);
+    const guess = guessScale(manifest), ans = prompt('مقیاس مش (۱ = متر؛ ۳۹.۳۷ = فایلی که اشتباهاً در ۰.۰۲۵۴ ضرب شده). پیشنهاد خودکار:', String(+guess.toFixed(4)));
+    if (ans === null) return toast('لغو شد'); const scale = parseFloat(ans) || guess;
+    let id = (bf.name.replace(/\.bin$/i, '').toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'mesh_map').slice(0, 32).padEnd(2, '_');
+    if (MAP_DEFS[id]) id = (id.slice(0, 27) + '_mesh');   // never shadow a built-in map (dust2, mirage ...)
+    if (maps[id] && !confirm('نقشه‌ای با شناسه ' + id + ' هست؛ جایگزین شود؟')) return toast('لغو شد');
+    const r = await bakeMesh(manifest, buf, { id, name: manifest.source ? String(manifest.source).replace(/\.[a-z0-9]+$/i, '') : id, scale, meshUrl: 'local:' + id, onProgress: (l, f) => toast(l + ' ' + Math.round(f * 100) + '٪', 120000) });
+    registerMeshSource('local:' + id, manifest, buf); pendingMesh.set(id, { manifest, file: bf });
+    const c = clone(r.def); delete c.routes; delete c.holds; delete c.buy; delete c.callouts; c.routes = {}; c.holds = {};
+    try { const mm = buildMap(c); autoGameplay(mm, true); r.def.routes = c.routes; r.def.holds = c.holds; r.def.buy = c.buy; r.def.callouts = c.callouts; } catch (err) { console.warn('autoGameplay', err); }
+    maps[id] = ensure(r.def); customIds.add(id); fillMapSel(); selectMap(id); commit('مپ از روی BIN ساخته شد');
+    toast('✓ ' + id + ': ' + r.stats.walk + ' خانهٔ قابل‌راه‌رفتن، ' + r.stats.crates + ' جعبه. اسپاون‌ها/سایت‌ها را بررسی کن و «ذخیره روی سرور» بزن', 9000);
+  } catch (err) { toast('خطا: ' + err.message, 9000); console.error(err); }
+};
+async function uploadMeshes(out) {   // big files go next to the maps on the server; the map only keeps the URL
+  for (const id of Object.keys(out)) {
+    const pm = pendingMesh.get(id); if (!pm || !out[id].mesh) continue;
+    const put = async (kind, body) => { const r = await fetch('/api/maps/mesh/' + id + '/' + kind, { method: 'PUT', headers: { 'x-admin-key': adminKey, 'Content-Type': 'application/octet-stream' }, body }); if (!r.ok) throw new Error('آپلود ' + kind + ' (' + r.status + ') — این سرور آپلود مش را پشتیبانی نمی‌کند؟'); };
+    toast('آپلود مدل سه‌بعدی ' + id + '… (چند دقیقه ممکن است طول بکشد)', 600000);
+    const slim = { ...pm.manifest }; delete slim.colliders;
+    await put('json', new Blob([JSON.stringify(slim)], { type: 'application/json' })); await put('bin', pm.file);
+    out[id].mesh.url = '/mapmesh/' + id; if (maps[id]?.mesh) maps[id].mesh.url = out[id].mesh.url; registerMeshSource(out[id].mesh.url, pm.manifest, null);
+    pendingMesh.delete(id);
+  }
+}
 $('bSave').onclick = async () => {
   if (!adminKey) return toast('برای ذخیره باید با کلید Admin وارد شوی (صفحه را رفرش کن)', 4000);
   const out = {}; for (const id of customIds) { if (maps[id]) out[id] = maps[id]; }
+  try { await uploadMeshes(out); } catch (err) { return toast('خطا: ' + err.message, 9000); }
   try { const r = await fetch('/api/maps/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: adminKey, maps: out }) }); const j = await r.json(); if (!j.ok) throw new Error(j.error || r.status); $('stSave').textContent = '✓ ذخیره شد'; try { localStorage.removeItem('cs2-editor-autosave'); } catch {} toast(`ذخیره شد (${j.count} مپ). بازیکن‌ها با ساخت اتاق جدید مپ تازه را می‌گیرند.`, 4000); } catch (e) { toast('ذخیره نشد: ' + e.message, 6000); }
 };
 $('bLogin').onclick = async () => { const k = $('key').value.trim(); if (!k) return ($('authmsg').textContent = 'کلید را وارد کن'); try { const r = await fetch('/api/maps/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: k }) }); const j = await r.json(); if (!j.ok) throw 0; adminKey = k; sessionStorage.setItem('cs2key', k); $('login').style.display = 'none'; } catch { $('authmsg').textContent = 'کلید اشتباه است یا سرور جواب نداد'; } };

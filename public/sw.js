@@ -1,4 +1,4 @@
-const CACHE = 'cs-dust-online-v30-lobbyfix';
+const CACHE = 'cs-dust-online-v31-meshmaps';
 const CORE = [
   '/', '/manifest.webmanifest', '/css/style.css', '/css/mobile.css',
   '/js/main.js', '/js/game.js', '/js/hud.js', '/js/models.js', '/js/glbguns.js',
@@ -18,6 +18,7 @@ self.addEventListener('activate', event => {
 });
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+  if (new URL(event.request.url).pathname.startsWith('/mapmesh/')) return;   // big mesh files: left to the browser's HTTP cache
   event.respondWith(
     fetch(event.request).then(resp => {
       const copy = resp.clone();

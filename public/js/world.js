@@ -4,6 +4,7 @@
 //  * Facade detail (cornices, skirting, windows), props, solid blocks, decals and lamps are merged into the chunk meshes.
 //  * Only the nearest few lamps own a real PointLight, so light count (and shader cost) stays constant.
 import * as THREE from 'three';
+import { attachMesh } from './meshview.js';
 import { WALL, WALL_TOP } from '/shared/constants.js';
 import { MAT, vnoise, wallHeights } from '/shared/maps.js';
 import { resolveTheme } from '/shared/mapkit.js';
@@ -49,6 +50,9 @@ function clippedBox(g, R, x0, y0, z0, x1, y1, z1, tile, c, bottom) {
 export function buildWorld(scene, m, opts = {}) {
   const root = new THREE.Group(); root.name = 'world'; scene.add(root);
   const th = resolveTheme(m.def.theme); const { W, H } = m;
+  // maps made from a real mesh (.bin): draw that mesh instead of the grid geometry as soon as it has streamed in
+  const meshDef = m.def.mesh && m.def.mesh.url && opts.mesh !== false ? m.def.mesh : null; let meshView = null, meshOn = false;
+  const startMesh = (q) => { meshView = attachMesh(root, m.def, { detail: opts.meshDetail || (() => { try { return localStorage.getItem('cs2-mesh-detail'); } catch (e) { return null; } })() || (q === 'low' ? 'low' : q === 'medium' ? 'medium' : 'high'), theme: th, onProgress: opts.onMeshProgress, onError: (e) => opts.onMeshError?.(e), onReady: () => { meshOn = true; for (const ch of chunks) freeChunk(ch); opts.onMeshReady?.(meshView.state); } }); };
   let quality = opts.quality || (opts.low ? 'low' : 'high'); let Q = QCFG[quality] || QCFG.high;
   const streaming = opts.stream !== false;
   const wh = wallHeights(m), isWall = (x, z) => x < 0 || z < 0 || x >= W || z >= H || m.heights[z * W + x] >= WALL;
@@ -338,9 +342,11 @@ export function buildWorld(scene, m, opts = {}) {
   }
 
   // ---------- per-frame streaming ----------
+  if (meshDef) startMesh(quality);
   const stat = { chunks: chunks.length, built: 0, visible: 0, tris: 0, builds: 0, frees: 0 };
   let t = 0, acc = 1, lastCam = null, lampAcc = 1; const _c = new THREE.Vector3(), _f = new THREE.Vector3();
   function refresh(cam, camObj) {
+    if (meshOn) { stat.built = 0; stat.visible = meshView.state.tiles; stat.tris = meshView.state.tris; return; }
     const ex = cam.x, ey = cam.y, ez = cam.z; let fx = 0, fy = 0, fz = -1, halfDiag = 1.2;
     if (camObj) { camObj.getWorldDirection(_f); fx = _f.x; fy = _f.y; fz = _f.z; const vf = THREE.MathUtils.degToRad(camObj.fov || 75) / 2; halfDiag = Math.atan(Math.tan(vf) * Math.sqrt(1 + (camObj.aspect || 1.7) ** 2)); }
     const viewDist = scene.fog ? scene.fog.far : 500, margin = 0.38, now = t;
@@ -385,7 +391,7 @@ export function buildWorld(scene, m, opts = {}) {
     }
   }
   function setQuality(q) {
-    if (!QCFG[q] || q === quality) return; quality = q; Q = QCFG[q]; const low = q === 'low', high = q === 'high';
+    if (!QCFG[q] || q === quality) return; quality = q; if (meshDef) { meshView?.dispose(); meshOn = false; startMesh(q); } Q = QCFG[q]; const low = q === 'low', high = q === 'high';
     if (scene.fog) { scene.fog.near = fogNear0 * Q.view * 0.8; scene.fog.far = fogFar0 * Q.view; }
     sun.intensity = sunInt(); sun.castShadow = !low; sun.shadow.mapSize.set(high ? 4096 : 2048, high ? 4096 : 2048); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
     bounce.visible = !low; if (motes) { motes.visible = !low; motes.geometry.setDrawRange(0, high ? 700 : q === 'medium' ? 350 : 0); }
@@ -395,10 +401,10 @@ export function buildWorld(scene, m, opts = {}) {
   }
   // Build everything around a camera before the first frame (loading screen) so there is no pop-in at spawn.
   function warm(cam, camObj) { acc = 1; lastCam = null; refresh(cam, camObj); }
-  function buildAll() { for (const ch of chunks) { if (!ch.built) buildChunk(ch); ch.group.visible = true; } }
+  function buildAll() { if (meshOn) return; for (const ch of chunks) { if (!ch.built) buildChunk(ch); ch.group.visible = true; } }
   function dispose() {
-    scene.remove(root); root.traverse((o) => { o.geometry?.dispose?.(); }); for (const M of Object.values(mats)) M.dispose?.(); for (const tx of texList) tx.dispose?.();
+    meshView?.dispose(); scene.remove(root); root.traverse((o) => { o.geometry?.dispose?.(); }); for (const M of Object.values(mats)) M.dispose?.(); for (const tx of texList) tx.dispose?.();
   }
   const stats = () => ({ ...stat, lamps: Math.min(Q.lamps, lampList.length) });
-  return { root, mats, sun, sky, update, setQuality, warm, buildAll, dispose, stats, chunks, exposure: th.exposure, theme: th };
+  return { root, mats, sun, sky, update, setQuality, warm, buildAll, dispose, stats, chunks, exposure: th.exposure, theme: th, get meshView() { return meshView; } };
 }

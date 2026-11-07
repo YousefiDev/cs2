@@ -55,7 +55,7 @@ function loadMap(id, force = false) {
   if (worldId === id && !force) return getMap(id);
   if (world) world.dispose();
   const bt = document.getElementById('brand-map'); if (bt) bt.textContent = String((MAP_DEFS[id] && MAP_DEFS[id].name) || 'Dust II').toUpperCase();
-  const m = getMap(id); world = buildWorld(scene, m, { low: Q === 'low', quality: Q }); applyExposure(); worldId = m.id; game && (game.map = m); return m;
+  const m = getMap(id); world = buildWorld(scene, m, { low: Q === 'low', quality: Q, onMeshProgress: meshProg, onMeshReady: () => meshProg(1), onMeshError: () => meshProg(-1) }); applyExposure(); worldId = m.id; game && (game.map = m); return m;
 }
 let game = null;
 const map = loadMap(['dust2', 'mirage', 'inferno', 'warehouse', 'bazaar', 'arena'].includes(settings.map) ? settings.map : 'dust2');
@@ -553,4 +553,12 @@ function openViewPane() {
       vmCommit(); openViewPane();
     } catch (e) { $('vm-json').value = 'JSON نامعتبر'; }
   };
+}
+
+// download progress of a mesh map's 3D model (the physics grid works immediately; the mesh replaces the grid look when it arrives)
+let meshEl = null;
+function meshProg(p) {
+  if (p >= 1 || p < 0) { if (meshEl) { meshEl.remove(); meshEl = null; } return; }
+  if (!meshEl) { meshEl = document.createElement('div'); meshEl.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:90;padding:6px 14px;border:1px solid #6b5a3a;border-radius:4px;background:rgba(0,0,0,.72);color:#e8d9b0;font:700 13px system-ui;pointer-events:none;direction:rtl'; document.body.appendChild(meshEl); }
+  meshEl.textContent = 'در حال دریافت مدل سه‌بعدی نقشه… ' + Math.round(p * 100) + '٪';
 }
