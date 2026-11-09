@@ -6,6 +6,7 @@
 // (they are ~1% of the surface but half of the triangles) and surfaces are tinted by their direction (floor / wall / underside)
 // because the file has no textures.
 import * as THREE from 'three';
+import { unpackContainer } from '/shared/meshfile.js';
 
 const TILE = 24;
 export const DETAIL = { high: 0.05, medium: 0.15, low: 0.3 };   // drop triangles whose longest edge is shorter than this (m)
@@ -17,16 +18,24 @@ export const hasMeshSource = (url) => sources.has(url);
 
 async function fetchSource(url, onProgress) {
   if (sources.has(url)) return sources.get(url);
-  const mr = await fetch(url + '.json'); if (!mr.ok) throw new Error('mesh json ' + mr.status);
-  const manifest = await mr.json();
-  const br = await fetch(url + '.bin'); if (!br.ok) throw new Error('mesh bin ' + br.status);
-  const total = +br.headers.get('content-length') || 0; let buffer;
-  if (br.body && total && onProgress) { // progress while downloading
-    const rd = br.body.getReader(), parts = []; let got = 0;
-    for (;;) { const { done, value } = await rd.read(); if (done) break; parts.push(value); got += value.length; onProgress(got / total * 0.5); }
-    const all = new Uint8Array(got); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; } buffer = all.buffer;
-  } else buffer = await br.arrayBuffer();
-  const s = { manifest, buffer }; return s;
+  // <url>.json (small manifest; for static hosting it lists how many <url>.bin.<n> parts the geometry is split into) + the geometry
+  let manifest = null; try { const mr = await fetch(url + '.json'); if (mr.ok) manifest = await mr.json(); } catch (e) { /* maybe a single-file .bin */ }
+  const grab = async (u, expect, base) => { // download one file with progress (base..base+share of the bar)
+    const r = await fetch(u); if (!r.ok) throw new Error('mesh ' + u + ' ' + r.status);
+    const total = +r.headers.get('content-length') || expect || 0;
+    if (!r.body || !total) return new Uint8Array(await r.arrayBuffer());
+    const rd = r.body.getReader(), got = []; let n = 0; for (;;) { const { done, value } = await rd.read(); if (done) break; got.push(value); n += value.length; onProgress?.(base.at + n / total * base.share); }
+    const all = new Uint8Array(n); let o = 0; for (const p of got) { all.set(p, o); o += p.length; } return all;
+  };
+  let u8;
+  if (manifest && manifest.parts > 1) {   // split for static hosting (Cloudflare assets: max 25 MiB per file)
+    const k = manifest.parts, per = manifest.bytes ? manifest.bytes / k : 0; const pieces = [];
+    for (let i = 0; i < k; i++) pieces.push(await grab(url + '.bin.' + i, per, { at: i / k * 0.5, share: 0.5 / k }));
+    u8 = new Uint8Array(pieces.reduce((n, a) => n + a.length, 0)); let o = 0; for (const p of pieces) { u8.set(p, o); o += p.length; }
+  } else u8 = await grab(url + '.bin', 0, { at: 0, share: 0.5 });
+  const buffer = u8.byteOffset === 0 && u8.byteLength === u8.buffer.byteLength ? u8.buffer : u8.slice().buffer;
+  if (!manifest || !manifest.geometries) { manifest = unpackContainer(buffer); if (!manifest) throw new Error('mesh: no manifest (.json) next to the .bin and none embedded in it'); }
+  return { manifest, buffer };
 }
 
 function makeMaterial(th) {

@@ -7,6 +7,7 @@ import { buildNav } from '/shared/nav.js';
 import { PHYS, WALL } from '/shared/constants.js';
 import { buildWorld } from './world.js';
 import { bakeMesh, guessScale } from '/shared/meshbake.js';
+import { unpackContainer, packContainer, slimManifest, makeZip, PART_SIZE } from '/shared/meshfile.js';
 import { registerMeshSource } from './meshview.js';
 
 const $ = (id) => document.getElementById(id);
@@ -379,10 +380,10 @@ $('bBin').onclick = () => $('fileBin').click();
 $('fileBin').onchange = async (e) => {
   const files = [...e.target.files]; e.target.value = '';
   const jf = files.find((f) => /\.json$/i.test(f.name)), bf = files.find((f) => /\.bin$/i.test(f.name));
-  if (!jf || !bf) return toast('هر دو فایل .json و .bin را با هم انتخاب کن', 5000);
+  if (!bf) return toast('فایل .bin را انتخاب کن (همراه .json، یا یک .bin تک‌فایل که مانیفستش داخلش است)', 6000);
   try {
-    toast('در حال خواندن فایل‌ها…', 120000); const manifest = JSON.parse(await jf.text()), buf = await bf.arrayBuffer();
-    if (manifest.bin && manifest.bin !== bf.name) console.warn('bin name differs from the manifest:', manifest.bin, bf.name);
+    toast('در حال خواندن فایل‌ها…', 120000); const buf = await bf.arrayBuffer(), manifest = jf ? JSON.parse(await jf.text()) : unpackContainer(buf);
+    if (!manifest) return toast('این .bin مانیفست داخلش ندارد؛ فایل .json همراهش را هم انتخاب کن (یا با «map2json --embed» تک‌فایل بساز)', 9000);
     const guess = guessScale(manifest), ans = prompt('مقیاس مش (۱ = متر؛ ۳۹.۳۷ = فایلی که اشتباهاً در ۰.۰۲۵۴ ضرب شده). پیشنهاد خودکار:', String(+guess.toFixed(4)));
     if (ans === null) return toast('لغو شد'); const scale = parseFloat(ans) || guess;
     let id = (bf.name.replace(/\.bin$/i, '').toLowerCase().replace(/[^a-z0-9_-]/g, '_') || 'mesh_map').slice(0, 32).padEnd(2, '_');
@@ -396,13 +397,27 @@ $('fileBin').onchange = async (e) => {
     toast('✓ ' + id + ': ' + r.stats.walk + ' خانهٔ قابل‌راه‌رفتن، ' + r.stats.crates + ' جعبه. اسپاون‌ها/سایت‌ها را بررسی کن و «ذخیره روی سرور» بزن', 9000);
   } catch (err) { toast('خطا: ' + err.message, 9000); console.error(err); }
 };
+function saveBlob(u8, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([u8])); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+async function downloadMeshZip(id, pm) {   // static layout: public/mapmesh/<id>.json + <id>.bin.<n> (parts <= 20 MB: Cloudflare assets limit is 25 MiB per file)
+  const data = new Uint8Array(await pm.file.arrayBuffer()), slim = slimManifest(pm.manifest, data.length), entries = [{ name: 'mapmesh/' + id + '.json', data: new TextEncoder().encode(JSON.stringify(slim)) }];
+  if (slim.parts === 1) entries.push({ name: 'mapmesh/' + id + '.bin', data }); else for (let i = 0; i < slim.parts; i++) entries.push({ name: 'mapmesh/' + id + '.bin.' + i, data: data.subarray(i * PART_SIZE, Math.min(data.length, (i + 1) * PART_SIZE)) });
+  saveBlob(makeZip(entries), 'mesh-' + id + '.zip');
+}
+$('bPackBin').onclick = async () => {   // one self-contained file: geometry + manifest (no separate .json needed any more)
+  const pm = pendingMesh.get(def.id); if (!pm) return toast('اول یک BIN بارگذاری کن (یا مپ مش‌دار را انتخاب کن)', 5000);
+  saveBlob(packContainer(pm.manifest, await pm.file.arrayBuffer()), def.id + '.bin'); toast('✓ ' + def.id + '.bin (تک‌فایل) دانلود شد', 5000);
+};
 async function uploadMeshes(out) {   // big files go next to the maps on the server; the map only keeps the URL
   for (const id of Object.keys(out)) {
     const pm = pendingMesh.get(id); if (!pm || !out[id].mesh) continue;
-    const put = async (kind, body) => { const r = await fetch('/api/maps/mesh/' + id + '/' + kind, { method: 'PUT', headers: { 'x-admin-key': adminKey, 'Content-Type': 'application/octet-stream' }, body }); if (!r.ok) throw new Error('آپلود ' + kind + ' (' + r.status + ') — این سرور آپلود مش را پشتیبانی نمی‌کند؟'); };
+    const put = async (kind, body) => { const r = await fetch('/api/maps/mesh/' + id + '/' + kind, { method: 'PUT', headers: { 'x-admin-key': adminKey, 'Content-Type': 'application/octet-stream' }, body }); if (!r.ok) { const e = new Error('آپلود ' + kind + ' (' + r.status + ')'); e.status = r.status; throw e; } };
     toast('آپلود مدل سه‌بعدی ' + id + '… (چند دقیقه ممکن است طول بکشد)', 600000);
     const slim = { ...pm.manifest }; delete slim.colliders;
-    await put('json', new Blob([JSON.stringify(slim)], { type: 'application/json' })); await put('bin', pm.file);
+    try { await put('json', new Blob([JSON.stringify(slim)], { type: 'application/json' })); await put('bin', pm.file); }
+    catch (err) {
+      if (![404, 405, 501].includes(err.status)) throw err;   // Cloudflare Worker / static host: files cannot be stored at runtime -> hand over a zip for public/
+      await downloadMeshZip(id, pm); toast('این سرور ذخیرهٔ فایل بزرگ ندارد. فایل mesh-' + id + '.zip دانلود شد: محتوایش (پوشهٔ mapmesh) را داخل پوشهٔ public پروژه بریز و دوباره دیپلوی کن. مپ ذخیره می‌شود.', 15000);
+    }
     out[id].mesh.url = '/mapmesh/' + id; if (maps[id]?.mesh) maps[id].mesh.url = out[id].mesh.url; registerMeshSource(out[id].mesh.url, pm.manifest, null);
     pendingMesh.delete(id);
   }
@@ -433,7 +448,7 @@ addEventListener('beforeunload', (e) => { if ($('stSave').textContent.startsWith
 addEventListener('resize', () => { draw(); resize3d(); });
 
 // ------------------------------------------------------------------ 3D preview + walk test
-let R3 = null, scene3 = null, world3 = null, cam3 = null, t3 = null, mode3 = 'orbit', walk = null, last3 = 0, smart = true, q3 = 'medium';
+let colOverlay = false, R3 = null, scene3 = null, world3 = null, cam3 = null, t3 = null, mode3 = 'orbit', walk = null, last3 = 0, smart = true, q3 = 'medium';
 const orbit = { yaw: 0.7, pitch: 0.75, dist: 120, tx: 64, tz: 64 };
 const keys = new Set(); let loop3 = 0;
 function setView(v) { const st = $('stage'); st.className = v === '2d' ? 's2d' : v === '3d' ? 's3d' : 'split'; for (const [id, k] of [['vw2d', '2d'], ['vwsp', 'sp'], ['vw3d', '3d']]) $(id).classList.toggle('on', k === v); if (v !== '2d') { init3d(); schedule3d(true); } else { cancelAnimationFrame(loop3); loop3 = 0; } setTimeout(() => { resize3d(); if (m) fitView(); }, 40); }
@@ -451,10 +466,10 @@ function resize3d() { if (!R3) return; const c = $('c3d'), w = c.clientWidth, h 
 function schedule3d(now) { if (!R3 || $('stage').classList.contains('s2d')) return; clearTimeout(t3); t3 = setTimeout(rebuild3d, now ? 0 : 450); }
 function rebuild3d() {
   if (!m) return; if (world3) { world3.dispose(); world3 = null; } scene3 = new THREE.Scene(); resize3d();
-  try { world3 = buildWorld(scene3, m, { quality: q3, low: q3 === 'low', stream: smart }); } catch (e) { toast('خطا در ساخت ۳بعدی: ' + e.message, 6000); console.error(e); return; }
+  try { world3 = buildWorld(scene3, m, { quality: q3, low: q3 === 'low', stream: smart }); world3.setCollisionOverlay?.(colOverlay); } catch (e) { toast('خطا در ساخت ۳بعدی: ' + e.message, 6000); console.error(e); return; }
   R3.toneMappingExposure = world3.exposure || 1.1; orbit.tx = m.W / 2; orbit.tz = m.H / 2; if (!loop3) { last3 = performance.now(); loop3 = requestAnimationFrame(frame3); } renderOpts3();
 }
-function renderOpts3() { const extra = $('opts3'); if (extra) extra.remove(); const d = document.createElement('span'); d.id = 'opts3'; d.style.cssText = 'display:inline-flex;gap:6px;margin-right:10px;align-items:center'; d.innerHTML = `<button id="bWalk" class="${mode3 === 'walk' ? 'on' : ''}">🎮 قدم‌زدن در مپ</button><label><input type="checkbox" id="cSmart" ${smart ? 'checked' : ''}> لود هوشمند (فقط روبرو)</label><select id="q3"><option ${q3 === 'high' ? 'selected' : ''} value="high">کیفیت بالا</option><option ${q3 === 'medium' ? 'selected' : ''} value="medium">متوسط</option><option ${q3 === 'low' ? 'selected' : ''} value="low">پایین</option></select>`; $('opts').appendChild(d); $('bWalk').onclick = () => (mode3 === 'walk' ? exitWalk() : enterWalk()); $('cSmart').onchange = (e) => { smart = e.target.checked; rebuild3d(); }; $('q3').onchange = (e) => { q3 = e.target.value; rebuild3d(); }; }
+function renderOpts3() { const extra = $('opts3'); if (extra) extra.remove(); const d = document.createElement('span'); d.id = 'opts3'; d.style.cssText = 'display:inline-flex;gap:6px;margin-right:10px;align-items:center'; d.innerHTML = `<button id="bWalk" class="${mode3 === 'walk' ? 'on' : ''}">🎮 قدم‌زدن در مپ</button><label><input type="checkbox" id="cSmart" ${smart ? 'checked' : ''}> لود هوشمند (فقط روبرو)</label><label title="دیوارهای نامرئی (قرمز) و جعبه‌ها (زرد) را روی مدل نشان می‌دهد؛ برای پیداکردن جاهایی که ظاهرشان باز است ولی گیر می‌کنی"><input type="checkbox" id="cCol" ${colOverlay ? 'checked' : ''}> نمایش برخورد</label><select id="q3"><option ${q3 === 'high' ? 'selected' : ''} value="high">کیفیت بالا</option><option ${q3 === 'medium' ? 'selected' : ''} value="medium">متوسط</option><option ${q3 === 'low' ? 'selected' : ''} value="low">پایین</option></select>`; $('opts').appendChild(d); $('bWalk').onclick = () => (mode3 === 'walk' ? exitWalk() : enterWalk()); $('cSmart').onchange = (e) => { smart = e.target.checked; rebuild3d(); }; $('cCol').onchange = (e) => { colOverlay = e.target.checked; world3?.setCollisionOverlay?.(colOverlay); }; $('q3').onchange = (e) => { q3 = e.target.value; rebuild3d(); }; }
 function enterWalk() {
   const sp = (sel?.t === 'spawns' ? def.spawns[sel.team][sel.i] : def.spawns.CT[0] || def.spawns.T[0]) || [m.W / 2, m.H / 2]; const x = sp[0] + 0.5, z = sp[1] + 0.5, i = Math.floor(z) * m.W + Math.floor(x);
   walk = { s: { x, y: m.floor[i] < WALL ? m.floor[i] : 0, z, vx: 0, vy: 0, vz: 0, onGround: true, crouch: false }, yaw: def.yaw.CT || 0, pitch: 0 }; mode3 = 'walk'; if ($('stage').classList.contains('s2d')) setView('3d'); toast('روی تصویر ۳بعدی کلیک کن (ماوس قفل می‌شود) · WASD · Space پرش · Ctrl خم‌شدن · Shift آهسته · Esc خروج', 5000); renderOpts3();

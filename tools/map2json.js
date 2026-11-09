@@ -48,6 +48,7 @@ function parseArgs(argv) {
     else if (a === '--instance-min') o.instanceMin = parseInt(argv[++i], 10);
     else if (a === '--info') o.info = true;
     else if (a === '--keep-uv') o.keepUV = true;
+    else if (a === '--embed') o.embed = true;   // append the manifest to the .bin: one self-contained file (the map editor then needs only the .bin)
     else if (a === '--target-mb') o.targetMb = parseFloat(argv[++i]);
     else if (a === '--no-merge') { /* قدیمی، نادیده */ }
     else if (a === '-h' || a === '--help') o.help = true;
@@ -608,6 +609,7 @@ function main() {
   };
   if (opt.collision) manifest.colliders = colliders;
   fs.writeFileSync(out, JSON.stringify(manifest));
+  if (opt.embed) { const j = Buffer.from(JSON.stringify(manifest)), foot = Buffer.alloc(8); foot.writeUInt32LE(j.length, 0); foot.write('CSMB', 4, 'ascii'); fs.appendFileSync(binPath, Buffer.concat([j, foot])); console.log('  --embed: manifest appended to ' + path.basename(binPath) + ' (the .json is no longer needed)'); }
   const mb = (n) => (n / 1048576).toFixed(1) + ' MB';
   console.log(`\n✔ ${out} (${mb(fs.statSync(out).size)}) + ${path.basename(binPath)} (${mb(fs.statSync(binPath).size)})`);
   console.log(`  ${outGeoms.length} geometry، ${instancedCount} instance، ${bakedCount} آبجکت ادغام‌شده، مثلث ذخیره‌شده ${Math.round(storedTris).toLocaleString()} / رندرشده ${Math.round(drawnTris).toLocaleString()}`);

@@ -341,6 +341,26 @@ export function buildWorld(scene, m, opts = {}) {
     const d = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.2), dm); d.position.set(cx + 0.5, fy + 2.6, best + 0.02); root.add(d);
   }
 
+  // ---------- collision overlay (map editor): what players actually collide with, drawn over the visuals ----------
+  let colGroup = null;
+  function setCollisionOverlay(on) {
+    if (colGroup) { root.remove(colGroup); colGroup.traverse((o) => o.geometry?.dispose?.()); colGroup = null; }
+    if (!on) return; colGroup = new THREE.Group(); colGroup.name = 'collision-overlay';
+    const isWall = (x, z) => x < 0 || z < 0 || x >= W || z >= H || m.heights[z * W + x] >= WALL, P = [];
+    for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
+      const i = z * W + x; if (isWall(x, z)) continue; const f = m.floor[i], t = f + 2.4;   // a red curtain on every edge between walkable space and a wall
+      if (isWall(x - 1, z)) P.push(x, f, z, x, f, z + 1, x, t, z + 1, x, f, z, x, t, z + 1, x, t, z);
+      if (isWall(x + 1, z)) P.push(x + 1, f, z, x + 1, t, z + 1, x + 1, f, z + 1, x + 1, f, z, x + 1, t, z, x + 1, t, z + 1);
+      if (isWall(x, z - 1)) P.push(x, f, z, x + 1, t, z, x + 1, f, z, x, f, z, x, t, z, x + 1, t, z);
+      if (isWall(x, z + 1)) P.push(x, f, z + 1, x + 1, f, z + 1, x + 1, t, z + 1, x, f, z + 1, x + 1, t, z + 1, x, t, z + 1);
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    const wm = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xff2a2a, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false })); wm.renderOrder = 5; colGroup.add(wm);
+    const L = []; for (const c of m.crates || []) { const x0 = c.x, x1 = c.x + c.w, z0 = c.z, z1 = c.z + c.d, y0 = c.base, y1 = c.base + c.h;   // crates/cars/containers: yellow boxes
+      const q = [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], [x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]]; for (const [a, b] of [[0, 1], [1, 2], [2, 3], [3, 0], [4, 5], [5, 6], [6, 7], [7, 4], [0, 4], [1, 5], [2, 6], [3, 7]]) L.push(...q[a], ...q[b]); }
+    const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(L, 3)); const ls = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xffe14a, depthWrite: false })); ls.renderOrder = 6; colGroup.add(ls);
+    colGroup.frustumCulled = false; wm.frustumCulled = false; ls.frustumCulled = false; root.add(colGroup);
+  }
   // ---------- per-frame streaming ----------
   if (meshDef) startMesh(quality);
   const stat = { chunks: chunks.length, built: 0, visible: 0, tris: 0, builds: 0, frees: 0 };
@@ -406,5 +426,5 @@ export function buildWorld(scene, m, opts = {}) {
     meshView?.dispose(); scene.remove(root); root.traverse((o) => { o.geometry?.dispose?.(); }); for (const M of Object.values(mats)) M.dispose?.(); for (const tx of texList) tx.dispose?.();
   }
   const stats = () => ({ ...stat, lamps: Math.min(Q.lamps, lampList.length) });
-  return { root, mats, sun, sky, update, setQuality, warm, buildAll, dispose, stats, chunks, exposure: th.exposure, theme: th, get meshView() { return meshView; } };
+  return { root, mats, sun, sky, update, setQuality, warm, buildAll, dispose, stats, chunks, exposure: th.exposure, theme: th, setCollisionOverlay, get meshView() { return meshView; } };
 }

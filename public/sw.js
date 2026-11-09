@@ -1,4 +1,4 @@
-const CACHE = 'cs-dust-online-v31-meshmaps';
+const CACHE = 'cs-dust-online-v32-meshstatic';
 const CORE = [
   '/', '/manifest.webmanifest', '/css/style.css', '/css/mobile.css',
   '/js/main.js', '/js/game.js', '/js/hud.js', '/js/models.js', '/js/glbguns.js',

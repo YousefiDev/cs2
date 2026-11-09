@@ -2,34 +2,43 @@
 // Mesh map (.json + .bin from map2json.js) -> playable map for this game.
 //
 //   node tools/bin2map.mjs dust2.json --id dust2_bin --install
-//       bakes a playable map (maps/dust2_bin.json) and copies the mesh to maps-mesh/ (the server serves it at /mapmesh/<id>)
+//       bakes a playable map (maps/dust2_bin.json) and installs the mesh in public/mapmesh/ (served at /mapmesh/<id>)
 //   node tools/bin2map.mjs dust2.json --id dust2_cs --attach maps/dust2_cs.json --offset 50,3.2,101 --install
 //       keeps an existing hand-made map (its physics grid) and only gives it the real mesh as its look
 //
 // options:  --bin <file.bin>   (default: the .bin next to the json)   --scale <n>  (default: auto; 39.37 when the file is 0.0254x too small)
-//           --name "Title"     --out <file.json>   --install   (copy mesh files to maps-mesh/)
+//           --name "Title"     --out <file.json>   --install   (copy the mesh to public/mapmesh/, split in <=20 MB parts)
+//           --pack [file]      write ONE self-contained .bin (manifest embedded; the editor then needs only that file)
 // Then import the map JSON in /map-editor.html (⬆ JSON) and press save, or let the server load maps-custom.json.
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { bakeMesh, guessScale, readManifest } = await import('../shared/meshbake.js');
+const { slimManifest, packContainer, PART_SIZE } = await import('../shared/meshfile.js');
 const { buildMap } = await import('../shared/maps.js');
 const { autoGameplay, validateMap } = await import('../shared/mapkit.js');
 
 const args = process.argv.slice(2), opt = {}; let input = null;
-for (let i = 0; i < args.length; i++) { const a = args[i]; if (a.startsWith('--')) { const k = a.slice(2); opt[k] = ['install'].includes(k) ? true : args[++i]; } else input = a; }
+for (let i = 0; i < args.length; i++) { const a = args[i]; if (a.startsWith('--')) { const k = a.slice(2); opt[k] = ['install'].includes(k) ? true : k === 'pack' && (i + 1 >= args.length || args[i + 1].startsWith('--')) ? true : args[++i]; } else input = a; }
 if (!input) { console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1, 14).map((l) => l.replace(/^\/\/ ?/, '')).join('\n')); process.exit(1); }
 const manifest = JSON.parse(fs.readFileSync(input, 'utf8')); readManifest(manifest);
 const binPath = opt.bin || path.join(path.dirname(input), manifest.bin || path.basename(input).replace(/\.json$/i, '.bin'));
 if (!fs.existsSync(binPath)) { console.error('bin file not found:', binPath); process.exit(1); }
 const id = (opt.id || path.basename(binPath).replace(/\.bin$/i, '')).toLowerCase().replace(/[^a-z0-9_-]/g, '_').slice(0, 32);
 const scale = opt.scale ? parseFloat(opt.scale) : guessScale(manifest);
-const install = () => {
-  const dir = path.join(root, 'maps-mesh'); fs.mkdirSync(dir, { recursive: true });
-  const slim = { ...manifest }; delete slim.colliders; fs.writeFileSync(path.join(dir, id + '.json'), JSON.stringify(slim)); fs.copyFileSync(binPath, path.join(dir, id + '.bin'));
-  console.log('mesh installed: maps-mesh/' + id + '.json + .bin  ->  served at /mapmesh/' + id);
+const install = () => {   // static layout, served by the Node server AND by Cloudflare (assets): public/mapmesh/<id>.json + <id>.bin[.n]
+  const dir = path.join(root, 'public', 'mapmesh'); fs.mkdirSync(dir, { recursive: true });
+  const data = fs.readFileSync(binPath), slim = slimManifest(manifest, data.length);
+  for (const f of fs.readdirSync(dir)) if (f === id + '.json' || f === id + '.bin' || f.startsWith(id + '.bin.')) fs.rmSync(path.join(dir, f));
+  fs.writeFileSync(path.join(dir, id + '.json'), JSON.stringify(slim));
+  if (slim.parts === 1) fs.writeFileSync(path.join(dir, id + '.bin'), data); else for (let i = 0; i < slim.parts; i++) fs.writeFileSync(path.join(dir, id + '.bin.' + i), data.subarray(i * PART_SIZE, Math.min(data.length, (i + 1) * PART_SIZE)));
+  console.log(`mesh installed: public/mapmesh/${id}.json + ${slim.parts} part(s)  ->  served at /mapmesh/${id}`);
 };
+if (opt.pack) { // one self-contained .bin (manifest embedded): the editor needs only this file
+  const data = fs.readFileSync(binPath), out = opt.pack === true ? path.join(path.dirname(binPath), id + '.packed.bin') : opt.pack;
+  fs.writeFileSync(out, packContainer(manifest, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength))); console.log('single-file bin written:', out); process.exit(0);
+}
 
 if (opt.attach) { // existing map: only add the mesh reference
   const def = JSON.parse(fs.readFileSync(opt.attach, 'utf8')); const [ox, oy, oz] = (opt.offset || '0,0,0').split(',').map(Number);

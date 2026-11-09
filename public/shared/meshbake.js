@@ -121,7 +121,18 @@ export async function bakeMesh(manifest, bin, opts = {}) {
     if (wx < bx0) bx0 = wx; if (wx > bx1) bx1 = wx; if (wz < bz0) bz0 = wz; if (wz > bz1) bz1 = wz; if (wy < by0) by0 = wy;
     sumX.set(r, (sumX.get(r) || 0) + x); sumZ.set(r, (sumZ.get(r) || 0) + z); sumN.set(r, (sumN.get(r) || 0) + 1);
   }
-  const GX0 = Math.floor(bx0) - 8, GZ0 = Math.floor(bz0) - 8, W = Math.ceil(bx1) - GX0 + 9, H = Math.ceil(bz1) - GZ0 + 9, YB = Math.floor(by0 * 20) / 20;
+  let GX0 = Math.floor(bx0) - 8, GZ0 = Math.floor(bz0) - 8; const YB = Math.floor(by0 * 20) / 20;
+  { // walls/floors rarely sit on whole metres: try the four half-metre shifts of the grid and keep the one that leaves the fewest cells half-covered
+    const pts = new Set(); for (let f = 0; f < nF; f++) { if (!seedSet.has(find(f))) continue; const lin = fv[f], y = lin % NY, xz = (lin - y) / NY; pts.add(xz); }
+    let best = 1e18, bs = [0, 0];
+    for (const sx of [0, 0.5]) for (const sz of [0, 0.5]) {
+      const cnt = new Map(); for (const xz of pts) { const z = xz % NZ, x = (xz - z) / NZ; const k = Math.floor(X0 + x * CS - GX0 - sx) * 100003 + Math.floor(Z0 + z * CS - GZ0 - sz); cnt.set(k, (cnt.get(k) || 0) + 1); }
+      let partial = 0; for (const n of cnt.values()) if (n < 4) partial++;
+      if (partial < best) { best = partial; bs = [sx, sz]; }
+    }
+    GX0 += bs[0]; GZ0 += bs[1]; log.push(`grid shift ${bs[0]},${bs[1]} m (partial cells ${best})`);
+  }
+  const W = Math.ceil(bx1 - GX0) + 9, H = Math.ceil(bz1 - GZ0) + 9;
   if (W > 520 || H > 520) throw new Error(`نقشه خیلی بزرگ است (${W}x${H})`);
   const N = W * H;
 
@@ -135,7 +146,8 @@ export async function bakeMesh(manifest, bin, opts = {}) {
     }
     if (!cnt.size) { cand[gz * W + gx] = null; continue; }
     const ys = [...cnt.keys()].sort((a, c) => a - c), layers = [];
-    for (const y of ys) { const L = layers[layers.length - 1]; if (L && y - L[0] <= 1) { if (cnt.get(y) > L[2]) L[0] = y, L[2] = cnt.get(y); L[1] += cnt.get(y); } else layers.push([y, cnt.get(y), cnt.get(y)]); }
+    for (const y of ys) { const L = layers[layers.length - 1]; if (L && y - L.last <= 3) { L[1] += cnt.get(y); L.last = y; L.ys.push(y, cnt.get(y)); } else { const n = [y, cnt.get(y), cnt.get(y)]; n.last = y; n.ys = [y, cnt.get(y)]; layers.push(n); } }
+    for (const L of layers) { let sum = 0, w = 0; for (let k = 0; k < L.ys.length; k += 2) { sum += L.ys[k] * L.ys[k + 1]; w += L.ys[k + 1]; } L[0] = Math.round(sum / w); }
     const out = []; for (const L of layers) if (L[1] >= 2) out.push(L[0] * VY + Y0 - YB);
     cand[gz * W + gx] = out.length ? out : null;
   }
@@ -159,7 +171,7 @@ export async function bakeMesh(manifest, bin, opts = {}) {
     }
   }
   const walkCount = () => { let n = 0; for (let i = 0; i < N; i++) if (fin(h[i])) n++; return n; };
-  log.push(`flooded cells ${walkCount()}`);
+  log.push(`flooded cells ${walkCount()}`); const dbgFlood = opts.debug ? Float32Array.from(h) : null;
 
   // ---------- 7. invisible floors (clip/nodraw): bridge short gaps between two walkable cells at the same height ----------
   const openBand = (gx, gz, hh) => {
@@ -367,7 +379,7 @@ export async function bakeMesh(manifest, bin, opts = {}) {
     // world = mesh * scale + (ox, oy, oz); the original mesh is drawn by meshview.js, the grid above is what players collide with
     mesh: { url: opts.meshUrl || '', scale, ox: -GX0, oy: -YB, oz: -GZ0 },
   };
-  return { def, log, stats: { W, H, walk: walkN, crates: crateDefs.length, scale } };
+  return { def, log, stats: { W, H, walk: walkN, crates: crateDefs.length, scale }, debug: opts.debug ? { cand, hFlood: dbgFlood, hFinal: h, used, GX0, GZ0, YB, W, H, V, NX, NZ, NY, X0, Z0, Y0 } : undefined };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
