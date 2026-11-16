@@ -1009,3 +1009,7 @@ input[type=range]{accent-color:var(--dust)} input[type=checkbox],input[type=radi
 
 /* phones in landscape (wider than 760px but short): show only the connection dot so the top bar is not clipped */
 @media (pointer:coarse) and (max-height:520px){.cm-net b{display:none}.cm-net{padding:5px 8px}}
+
+/* the game page owns gestures: no pull-to-refresh / overscroll chaining, no long-press callout, no pinch/double-tap zoom on the game surface */
+html,body{overscroll-behavior:none;-webkit-touch-callout:none}
+#view{touch-action:none}

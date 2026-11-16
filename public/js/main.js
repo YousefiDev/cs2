@@ -15,7 +15,8 @@ import { StatsUI } from './stats.js';
 import { ReportUI } from './report.js';
 import { Keybinds, ACTIONS, GROUPS, codeLabel, RESERVED } from './keybinds.js';
 import { VoiceChat } from './voice.js';
-import { startGunPreload, gunsEssentialReady } from './glbguns.js';
+import { startGunPreload, gunsEssentialReady } from './glbguns.js';
+import { installInputGuard } from './inputguard.js';
 import { TUNE, TUNE_DEFAULTS, tuneOf, bumpTune } from './models.js';
 import { WEAPONS, WEAPON_KEYS } from '/shared/weapons.js';
 
@@ -338,15 +339,8 @@ const isEditableTarget = (el) => {
   const tag = (el.tagName || '').toUpperCase();
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 };
-const gameplayKeyGuard = (e) => {
-  if (!game.inRoom || isEditableTarget(e.target)) return;
-  // Block the browser's default action, but NEVER stop propagation here: the
-  // game input handler below must still receive Tab/Ctrl/C/other movement keys.
-  // This is especially important for Tab (scoreboard) and Control (crouch).
-  if (e.code === 'Tab' || e.ctrlKey || e.altKey || e.metaKey) e.preventDefault();
-};
-addEventListener('keydown', gameplayKeyGuard, true);
-addEventListener('keyup', gameplayKeyGuard, true);
+// All browser shortcuts / gestures stay out of the game page (never stopPropagation: the game handlers below still get every key).
+const inputGuard = installInputGuard({ inMatch: () => game.inRoom, isEditable: isEditableTarget, isTouch: () => touch, onHint: (t) => tipToast(t) });
 addEventListener('keydown', (e) => { if (isEditableTarget(e.target) && e.target.id !== 'chat-in') return; game.onKeyDown(e); });
 addEventListener('keyup', (e) => game.onKeyUp(e));
 canvas.addEventListener('mousedown', (e) => { sound.init(); if (game.inRoom && !game.locked && $('teamsel').hidden && !game.buyOpen && !touch) { game.lock(); return; } game.onMouseDown(e); });
@@ -561,4 +555,11 @@ function meshProg(p) {
   if (p >= 1 || p < 0) { if (meshEl) { meshEl.remove(); meshEl = null; } return; }
   if (!meshEl) { meshEl = document.createElement('div'); meshEl.style.cssText = 'position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:90;padding:6px 14px;border:1px solid #6b5a3a;border-radius:4px;background:rgba(0,0,0,.72);color:#e8d9b0;font:700 13px system-ui;pointer-events:none;direction:rtl'; document.body.appendChild(meshEl); }
   meshEl.textContent = 'در حال دریافت مدل سه‌بعدی نقشه… ' + Math.round(p * 100) + '٪';
+}
+
+// short tip at the bottom of the screen
+function tipToast(text) {
+  const el = document.createElement('div'); el.textContent = text;
+  el.style.cssText = 'position:fixed;left:50%;bottom:64px;transform:translateX(-50%);z-index:95;max-width:min(560px,90vw);padding:8px 16px;border:1px solid #6b5a3a;border-radius:4px;background:rgba(0,0,0,.78);color:#e8d9b0;font:700 13px system-ui;text-align:center;pointer-events:none;direction:rtl';
+  document.body.appendChild(el); setTimeout(() => el.remove(), 9000);
 }
